@@ -1,0 +1,4 @@
+ready_for_packing.wav
+invite_scan_order.wav
+invite_scan_box.wav
+box_confirm_ok.wav

@@ -47,6 +47,10 @@ class QRWorker:
         # Lưu tạm các camera đã được bật record theo nghiệp vụ đóng/giao
         # key = f"{session_type}:{session_id}:{scanner_id}"
         self.packing_record_targets = {}
+        # Lưu trạng thái thao tác dạng QR lệnh cố định:
+        # s01DONG -> chờ quét thùng lớn
+        # s08GIAO -> chờ quét mã đơn, sau đó chờ quét thùng giao
+        self.packing_action_state = {}
 
 
     def run(self):
@@ -285,7 +289,7 @@ class QRWorker:
     def _packing_sound(self, sound_name):
         """
         Phát âm thanh thật theo nghiệp vụ đóng/giao.
-        Nếu chưa có file wav thì audio_service sẽ tự MessageBeep.
+        Nếu chưa có file wav thì fallback về âm thanh cũ.
         """
         try:
             if play_event_sound(sound_name):
@@ -293,21 +297,31 @@ class QRWorker:
         except Exception as exc:
             print("[PACKING SOUND ERROR]", sound_name, exc)
 
-        # Fallback âm thanh cũ
+        # Fallback nhóm thông báo / thành công
         if sound_name in (
             "packing_start",
+            "prompt_scan_packing_order",
+            "prompt_scan_packing_items",
+            "prompt_scan_delivery_order",
+            "prompt_scan_delivery_box",
+            "ready_for_packing",
+            "invite_scan_order",
+            "invite_scan_box",
+            "box_confirm_ok",
             "ready_for_handover",
             "handover_success",
         ):
             order_ok()
             return
 
+        # Fallback quét kiện nhỏ
         if sound_name in (
             "item_scan_ok",
         ):
             employee_ok()
             return
 
+        # Fallback nhóm lỗi / stop
         if sound_name in (
             "packing_stop",
             "handover_error",
@@ -315,6 +329,7 @@ class QRWorker:
             "order_already_delivered",
             "error_session_running",
             "error_no_session",
+            "packing_delete_ok",
         ):
             stop_ok()
             return
@@ -588,6 +603,149 @@ class QRWorker:
             scan_cam_id = self._find_camera_by_sub(scanner_id)
             if not scan_cam_id:
                 print("CMD CAMERA NOT FOUND", scanner_id)
+                return
+            
+            # =========================================================
+            # CHẾ ĐỘ QR LỆNH CỐ ĐỊNH: DONG / GIAO
+            # Dùng khi chưa in được mã dạng dong:ABC / giao:ABC
+            # =========================================================
+
+            # 0.1. QR DONG: bật chế độ chờ quét mã thùng lớn
+            # Ví dụ: s01DONG
+            if body_lower == "dong":
+                self.packing_action_state[scanner_id] = {
+                    "mode": "packing_wait_master_order"
+                }
+
+                self._packing_log(
+                    f"[ĐÓNG HÀNG - MỜI QUÉT ĐƠN ĐỂ ĐÓNG] "
+                    f"scanner={scanner_id}, "
+                    f"trạng_thái=chờ_quét_mã_đơn_đóng"
+                )
+
+                self._packing_sound("prompt_scan_packing_order")
+                return
+
+
+            # 0.2. QR GIAO: bật chế độ chờ quét mã đơn giao
+            # Ví dụ: s08GIAO
+            if body_lower == "giao":
+                self.packing_action_state[scanner_id] = {
+                    "mode": "handover_wait_delivery_order"
+                }
+
+                self._packing_log(
+                    f"[GIAO HÀNG - MỜI QUÉT ĐƠN ĐỂ XÁC NHẬN GIAO] "
+                    f"scanner_giao={scanner_id}, "
+                    f"trạng_thái=chờ_quét_mã_đơn"
+                )
+
+                self._packing_sound("prompt_scan_delivery_order")
+                return
+
+
+            # 0.3. Nếu đang ở chế độ chờ mã thùng lớn sau QR DONG
+            state_action = self.packing_action_state.get(scanner_id)
+
+            if state_action and state_action.get("mode") == "packing_wait_master_order":
+                master_order_code = body.strip()
+
+                if not master_order_code:
+                    self._packing_log(
+                        f"[ĐÓNG HÀNG LỖI] scanner={scanner_id}, lý_do=Mã thùng lớn rỗng"
+                    )
+                    self._packing_sound("handover_error")
+                    return
+
+                employee_id, employee_name = self._employee_info_for_scanner(scan_cam_id)
+
+                self._packing_log(
+                    f"[ĐÓNG HÀNG XÁC NHẬN THÙNG LỚN] "
+                    f"scanner={scanner_id}, "
+                    f"mã_thùng_lớn={master_order_code}, "
+                    f"employee={employee_id or ''} {employee_name or ''}"
+                )
+
+                self.packing_service.start_packing(
+                    scanner_id=scanner_id,
+                    master_order_code=master_order_code,
+                    employee_code=employee_id,
+                    employee_name=employee_name,
+                )
+
+                self._packing_log(
+                    f"[ĐÓNG HÀNG - MỜI QUÉT KIỆN NHỎ] "
+                    f"scanner={scanner_id}, "
+                    f"mã_đơn={master_order_code}, "
+                    f"trạng_thái=đang_đóng_hàng"
+                )
+
+                self._packing_sound("prompt_scan_packing_items")
+
+                self.packing_action_state.pop(scanner_id, None)
+                return
+
+
+            # 0.4. Nếu đang ở chế độ chờ mã đơn giao sau QR GIAO
+            if state_action and state_action.get("mode") == "handover_wait_delivery_order":
+                delivery_order_code = body.strip()
+
+                if not delivery_order_code:
+                    self._packing_log(
+                        f"[GIAO HÀNG LỖI] scanner_giao={scanner_id}, lý_do=Mã đơn giao rỗng"
+                    )
+                    self._packing_sound("handover_error")
+                    return
+
+                employee_id, employee_name = self._employee_info_for_scanner(scan_cam_id)
+
+                result = self.packing_service.start_handover(
+                    scanner_id=scanner_id,
+                    delivery_order_code=delivery_order_code,
+                    delivery_employee_code=employee_id,
+                    delivery_employee_name=employee_name,
+                )
+
+                if result and result.get("ok"):
+                    self.packing_action_state[scanner_id] = {
+                        "mode": "handover_wait_box_code",
+                        "delivery_order_code": delivery_order_code,
+                    }
+
+                    self._packing_log(
+                        f"[GIAO HÀNG - MỜI QUÉT KIỆN ĐỂ XÁC NHẬN] "
+                        f"scanner_giao={scanner_id}, "
+                        f"mã_giao={delivery_order_code}, "
+                        f"trạng_thái=chờ_quét_mã_kiện"
+                    )
+
+                    self._packing_sound("prompt_scan_delivery_box")
+                else:
+                    # Đơn chưa đóng / đã giao / lỗi khác thì thoát chế độ giao
+                    self.packing_action_state.pop(scanner_id, None)
+
+                return
+
+
+            # 0.5. Nếu đang chờ quét mã thùng giao
+            if state_action and state_action.get("mode") == "handover_wait_box_code":
+                packing_order_code = body.strip()
+
+                if not packing_order_code:
+                    self._packing_log(
+                        f"[GIAO HÀNG LỖI] scanner_giao={scanner_id}, lý_do=Mã thùng rỗng"
+                    )
+                    self._packing_sound("handover_error")
+                    return
+
+                self.packing_service.confirm_handover_box(
+                    scanner_id=scanner_id,
+                    packing_order_code=packing_order_code
+                )
+
+                # Sau khi xác nhận đúng/sai xong thì thoát chế độ,
+                # muốn giao đơn tiếp theo thì quét lại QR GIAO.
+                self.packing_action_state.pop(scanner_id, None)
                 return
 
             # =========================================================

@@ -56,6 +56,17 @@ def play_event_sound(sound_name):
         "packing_stop": "packing_stop.wav",
         "packing_delete_ok": "packing_delete_ok.wav",
 
+        "prompt_scan_packing_order": "prompt_scan_packing_order.wav",
+        "prompt_scan_packing_items": "prompt_scan_packing_items.wav",
+        "prompt_scan_delivery_order": "prompt_scan_delivery_order.wav",
+        "prompt_scan_delivery_box": "prompt_scan_delivery_box.wav",
+
+        # alias cũ
+        "ready_for_packing": "prompt_scan_packing_order.wav",
+        "box_confirm_ok": "prompt_scan_packing_items.wav",
+        "invite_scan_order": "prompt_scan_delivery_order.wav",
+        "invite_scan_box": "prompt_scan_delivery_box.wav",
+
         "order_not_packed": "order_not_packed.wav",
         "ready_for_handover": "ready_for_handover.wav",
         "handover_success": "handover_success.wav",
