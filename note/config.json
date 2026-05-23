@@ -1,0 +1,43 @@
+{
+    "storage_path": "D:/Video 2",
+    "cameras": [
+        {
+            "id": "1",
+            "name": "DEBUG-1",
+            "ip": "192.168.110.185",
+            "rtsp_main": "RTSP://admin:Antn2016@192.168.110.185:554/live/0/main",
+            "rtsp_sub": "RTSP://admin:Antn2016@192.168.110.185:554/live/0/sub",
+            "area": "DEBUG",
+            "enabled": true
+        },
+        {
+            "id": "2",
+            "name": "Si-1",
+            "ip": "192.168.23.105",
+            "rtsp_main": "rtsp://admin:Antn2016@192.168.23.105:554/live/0/MAIN",
+            "rtsp_sub": "rtsp://admin:Antn2016@192.168.23.105:554/live/0/sub",
+            "area": "Si",
+            "enabled": true
+        },
+        {
+            "id": "3",
+            "name": "Si-2",
+            "ip": "192.168.23.103",
+            "rtsp_main": "rtsp://admin:Antn2016@192.168.23.103:554/live/0/MAIN",
+            "rtsp_sub": "rtsp://admin:Antn2016@192.168.23.103:554/live/0/sub",
+            "area": "Si",
+            "enabled": true
+        },
+        {
+            "id": "4",
+            "name": "Si-3",
+            "ip": "192.168.23.101",
+            "rtsp_main": "rtsp://admin:Antn2016@192.168.23.101:554/live/0/MAIN",
+            "rtsp_sub": "rtsp://admin:Antn2016@192.168.23.103:554/live/0/sub",
+            "area": "Si",
+            "enabled": true
+        }
+    ],
+    "alert_enabled": false,
+    "record_auto_stop_seconds": 900
+}

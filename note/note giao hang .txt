@@ -1,0 +1,45 @@
+sound/order_not_packed.wav
+sound/ready_for_handover.wav
+sound/handover_success.wav
+sound/handover_error.wav
+
+Đóng hàng:
+s01dong:ABC1234
+s01aaa
+s01bbb
+s01stop
+
+=> database lưu ABC1234 status = done
+
+Giao hàng:
+s08giao:ABC1234
+
+Nếu ABC1234 chưa có status = done:
+=> phát âm thanh: đơn hàng chưa được đóng
+
+Nếu ABC1234 đã có status = done:
+=> phát âm thanh: sẵn sàng giao
+=> chờ quét mã thùng
+
+s08dong:ABC1234
+
+Nếu trùng:
+=> phát âm thanh: giao đúng thùng
+=> lưu success
+
+Nếu không trùng:
+=> phát âm thanh: sai thùng hàng
+=> lưu failed
+
+| File                          | Khi phát                      |
+| ----------------------------- | ----------------------------- |
+| `packing_start.wav`           | Bắt đầu đóng hàng             |
+| `item_scan_ok.wav`            | Quét mã nhỏ thành công        |
+| `packing_stop.wav`            | Kết thúc đóng hàng            |
+| `order_not_packed.wav`        | Đơn chưa được đóng            |
+| `ready_for_handover.wav`      | Đơn sẵn sàng giao             |
+| `handover_success.wav`        | Giao đúng thùng               |
+| `handover_error.wav`          | Giao lỗi/sai thùng            |
+| `order_already_delivered.wav` | Đơn đã giao rồi               |
+| `error_session_running.wav`   | Scanner đang có đơn chưa stop |
+| `error_no_session.wav`        | Chưa có phiên đóng hàng       |

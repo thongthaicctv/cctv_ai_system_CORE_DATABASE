@@ -1,0 +1,41 @@
+I. cài đặt luồng dữ liệu hình ảnh RTSP: 
+    - MAIN: là luồng tín hiệu chính sử dụng cho việc ghi hình 
+    - SUB: là luồng tín hiệu phụ sử dụng cho preview
+    - sử dụng VLC để kiểm tra tín hiệu trước khi cấu hình đảm bảo RTSP đang hoạt động bình thường.
+    một số luồng RTSP của camera phổ biến:
+        1. Dahua
+                        MAIN:   rtsp://recorder:Antn2016@192.168.23.14:554/cam/realmonitor?channel=1&subtype=0
+                        sub:    rtsp://recorder:Antn2016@192.168.23.14:554/cam/realmonitor?channel=1&subtype=1
+        2. Hikvision
+                        Main:   rtsp://recorder:Antn2016@192.168.23.13:249/Streaming/Channels/101
+                        Sub:    rtsp://recorder:Antn2016@192.168.23.13:249/Streaming/Channels/102
+        3. vision Corp
+                        MAIN:   rtsp://admin:antn@2016@192.168.23.16:554/live/0/MAIN
+                        Sub:    rtsp://admin:antn@2016@192.168.23.16:554/live/0/sub
+        4. UNV
+                        MAIN:   rtsp://recorder:Antn2016,@192.168.23.23:554/media/video1
+                        Sub:    rtsp://recorder:Antn2016,@192.168.23.23:554/media/video2
+        5. See tong:
+	                    Main:   rtsp://admin:123456@192.168.23.11:554/user=admin_password=pass_channel=1_stream=0.sdp
+	                    SUB:    rtsp://admin:123456@192.168.23.11:554/user=admin_password=pass_channel=1_stream=1.sdp
+
+II. khi camera sử dụng các ký tự đặc biệt trong mật khẩu ta cần sử dụng mã hoá để cho phần mềm kết nối.
+        | Ký tự | Encode |
+        | ----- | ------ |
+        | @     | %40    |
+        | :     | %3A    |
+        | /     | %2F    |
+        | #     | %23    |
+        | ?     | %3F    |
+        | &     | %26    |
+        | space | %20    |
+
+        => một số ví dụ:    camera                      Phần mềm    
+                            Abcd1234@   =====>>>>>    Abcd1234%40
+                            Abcd#1234   =====>>>>>    Abcd%231234
+                            Abcd&1234   =====>>>>>    Abcd%261234
+                            Abcd?1234@  =====>>>>>    Abcd%3F1234%40
+                            Abcd 1234@   =====>>>>>   Abcd%201234%40
+
+
+III. với máy có card màn hình cài thêm: C:\ffmpeg\bin\ffmpeg.exe

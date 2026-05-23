@@ -1,0 +1,146 @@
+{
+    "storage_path": "E:/DEBUG",
+    "record_auto_stop_seconds": 600,
+    "record_mapping": {
+        "1": [
+            "1"
+        ],
+        "2": [
+            "2"
+        ],
+        "3": [
+            "3"
+        ],
+        "4": [
+            "4"
+        ],
+        "5": [
+            "5"
+        ],
+        "7": [
+            "7"
+        ],
+        "8": [
+            "8"
+        ],
+        "9": [
+            "9"
+        ],
+        "10": [
+            "10"
+        ],
+        "11": [
+            "11"
+        ],
+        "12": []
+    },
+    "cleanup_enabled": true,
+    "keep_index_days": 3,
+    "cameras": [
+        {
+            "id": "1",
+            "name": "DEBUG-1",
+            "ip": "192.168.110.185",
+            "rtsp_main": "RTSP://admin:Antn2016@192.168.110.185:554/live/0/main",
+            "rtsp_sub": "RTSP://admin:Antn2016@192.168.110.185:554/live/0/sub",
+            "area": "DEBUG",
+            "enabled": true
+        },
+        {
+            "id": "2",
+            "name": "Si-1",
+            "ip": "192.168.23.101",
+            "rtsp_main": "rtsp://admin:Antn2016@192.168.23.101:554/live/0/MAIN",
+            "rtsp_sub": "rtsp://admin:Antn2016@192.168.23.101:554/live/0/SUB",
+            "area": "Si",
+            "enabled": true
+        },
+        {
+            "id": "3",
+            "name": "Si-2",
+            "ip": "192.168.23.102",
+            "rtsp_main": "rtsp://admin:Antn2016@192.168.23.102:554/live/0/MAIN",
+            "rtsp_sub": "rtsp://admin:Antn2016@192.168.23.102:554/live/0/SUB",
+            "area": "Si",
+            "enabled": true
+        },
+        {
+            "id": "4",
+            "name": "Si-3",
+            "ip": "192.168.23.104",
+            "rtsp_main": "rtsp://admin:antn%402016@192.168.23.104/:554/Streaming/Channels/101",
+            "rtsp_sub": "rtsp://admin:antn%402016@192.168.23.104/:554/Streaming/Channels/102",
+            "area": "Si",
+            "enabled": true
+        },
+        {
+            "id": "5",
+            "name": "Si-4",
+            "ip": "192.168.23.103",
+            "rtsp_main": "rtsp://admin:Antn2016@192.168.23.103:554/live/0/MAIN",
+            "rtsp_sub": "rtsp://admin:Antn2016@192.168.23.103:554/live/0/SUB",
+            "area": "Si",
+            "enabled": true
+        },
+        {
+            "id": "7",
+            "name": "VP-T2-1",
+            "ip": "192.168.113.21",
+            "rtsp_main": "rtsp://admin:antn%401234@192.168.113.21:554/Streaming/Channels/101",
+            "rtsp_sub": "rtsp://admin:antn%401234@192.168.113.21:554/Streaming/Channels/102",
+            "area": "VP",
+            "enabled": true
+        },
+        {
+            "id": "8",
+            "name": "Ecom-1",
+            "ip": "192.168.23.11",
+            "rtsp_main": "rtsp://admin:123456@192.168.23.11:554/user=admin_password=pass_channel=1_stream=0.sdp",
+            "rtsp_sub": "rtsp://admin:123456@192.168.23.11:554/user=admin_password=pass_channel=1_stream=1.sdp",
+            "area": "Ecom",
+            "enabled": true
+        },
+        {
+            "id": "9",
+            "name": "Ecom-2",
+            "ip": "192.168.23.12",
+            "rtsp_main": "rtsp://admin:123456@192.168.23.12/:554/Streaming/Channels/101",
+            "rtsp_sub": "rtsp://admin:123456@192.168.23.12/:554/Streaming/Channels/102",
+            "area": "Ecom",
+            "enabled": true
+        },
+        {
+            "id": "10",
+            "name": "Ecom-3",
+            "ip": "192.168.23.13",
+            "rtsp_main": "rtsp://recorder:Antn2016@192.168.23.13:249/Streaming/Channels/101",
+            "rtsp_sub": "rtsp://recorder:Antn2016@192.168.23.13:249/Streaming/Channels/102",
+            "area": "Ecom",
+            "enabled": true
+        },
+        {
+            "id": "11",
+            "name": "Ecom-4",
+            "ip": "192.168.23.14",
+            "rtsp_main": "rtsp://recorder:Antn2016@192.168.23.14:554/cam/realmonitor?channel=1&subtype=0",
+            "rtsp_sub": "rtsp://recorder:Antn2016@192.168.23.14:554/cam/realmonitor?channel=1&subtype=1",
+            "area": "Ecom",
+            "enabled": true
+        },
+        {
+            "id": "12",
+            "name": "uniarch",
+            "ip": "192.168.110.186",
+            "rtsp_main": "rtsp://admin:antn%402016@192.168.110.186:554/media/video1",
+            "rtsp_sub": "rtsp://admin:antn%402016@192.168.110.186:554/media/video2",
+            "area": "Debug",
+            "enabled": true
+        }
+    ],
+    "http_enabled": true,
+    "http_port": 28080,
+    "ddns_domain": "suabap.cameraddns.net",
+    "http_user": "admin",
+    "http_pass": "12345678",
+    "alert_enabled": false
+}

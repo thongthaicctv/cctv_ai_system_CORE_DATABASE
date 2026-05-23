@@ -1,0 +1,59 @@
+{
+    "alert_enabled": false,
+    "storage_path": "G:/ProVideoAiSystem",
+    "record_auto_stop_seconds": 30,
+    "record_mapping": {
+        "1": [
+            "1"
+        ],
+        "2": [
+            "2"
+        ],
+        "3": [
+            "3"
+        ],
+        "4": [
+            "4"
+        ]
+    },
+    "cleanup_enabled": true,
+    "keep_index_days": 3,
+    "cameras": [
+        {
+            "id": "1",
+            "name": "VP-T2",
+            "ip": "192.168.113.21",
+            "rtsp_main": "rtsp://admin:ntn%401234@192.168.113.21:554/Streaming/Channels/101",
+            "rtsp_sub": "rtsp://admin:ntn%401234@192.168.113.21:554/Streaming/Channels/102",
+            "area": "VP",
+            "enabled": true
+        },
+        {
+            "id": "2",
+            "name": "Si-1",
+            "ip": "192.168.23.105",
+            "rtsp_main": "rtsp://admin:Antn2016@192.168.23.105:554/live/0/MAIN",
+            "rtsp_sub": "rtsp://admin:Antn2016@192.168.23.105:554/live/0/sub",
+            "area": "Si",
+            "enabled": true
+        },
+        {
+            "id": "3",
+            "name": "Si-2",
+            "ip": "192.168.23.103",
+            "rtsp_main": "rtsp://admin:Antn2016@192.168.23.103:554/live/0/MAIN",
+            "rtsp_sub": "rtsp://admin:Antn2016@192.168.23.103:554/live/0/sub",
+            "area": "Si",
+            "enabled": true
+        },
+        {
+            "id": "4",
+            "name": "Si-3",
+            "ip": "192.168.23.101",
+            "rtsp_main": "rtsp://admin:Antn2016@192.168.23.101:554/live/0/MAIN",
+            "rtsp_sub": "rtsp://admin:Antn2016@192.168.23.103:554/live/0/sub",
+            "area": "Si",
+            "enabled": true
+        }
+    ]
+}

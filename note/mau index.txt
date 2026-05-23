@@ -1,0 +1,27 @@
+{
+  "videos": [
+    {
+      "id": "VID_CAM01_20260505_101530",
+      "camera_id": "CAM01",
+      "camera_name": "Cổng chính",
+
+      "file_path": "/recordings/CAM01/2026-05-05/20260505_101530.mp4",
+
+      "start_time": "2026-05-05T10:15:30",
+      "end_time": "2026-05-05T10:20:30",
+      "duration": 300,
+
+      "qr_code": "ABC123",
+
+      "employee_id": "EMP001",
+      "employee_code": "NV001",
+      "employee_name": "Nguyễn Văn A",
+      "department": "Kho",
+      "position": "Nhân viên",
+
+      "trigger_type": "qr",
+      "status": "completed",
+      "created_at": "2026-05-05T10:20:31"
+    }
+  ]
+}

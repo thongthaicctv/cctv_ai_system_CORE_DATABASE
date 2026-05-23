@@ -1,0 +1,17 @@
+cctv_ai_system/
+├── main.py
+├── requirements.txt
+├── config.json
+├── ui/
+│   ├── main_window.py
+│   ├── camera_grid.py
+│   ├── dashboard.py
+│   └── camera_config.py
+├── core/
+│   ├── camera_manager.py
+│   ├── record_engine.py
+│   ├── scan_engine.py
+│   └── storage.py
+├── db/
+│   └── app.db
+└── logs/
