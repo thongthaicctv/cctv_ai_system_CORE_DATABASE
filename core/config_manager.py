@@ -23,6 +23,17 @@ def _default_config():
         "keep_index_days": 240,
 
         "cameras": [],
+
+        "db": {
+            "type": "mysql",
+            "host": "127.0.0.1",
+            "port": 3306,
+            "database": "atg_order_system",
+            "user": "atg_app",
+            "password": "atg_password",
+            "charset": "utf8mb4",
+            "connect_timeout": 5,
+        },
         
         
         "http_enabled": False,
