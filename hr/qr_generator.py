@@ -459,3 +459,76 @@ def save_employee_qr(emp_id: str, emp_name: str, dept: str, path: str):
     """Lưu QR code ra file PNG."""
     img = make_employee_qr(emp_id, emp_name, dept)
     img.save(path, "PNG")
+
+
+def make_text_qr(
+    content: str,
+    note: str = "",
+    module_px: int = 10,
+    quiet: int = 4,
+) -> Image.Image:
+    """Tao anh QR cho noi dung tuy y, co dong ghi chu ben duoi."""
+    content = str(content or "").strip()
+    if not content:
+        raise ValueError("Noi dung QR rong")
+
+    qr = make_qr_matrix(content)
+    size = qr.size
+
+    module = module_px
+    quiet_px = quiet * module
+    qr_px = size * module
+    margin = quiet_px
+
+    try:
+        for font_path in [
+            "C:/Windows/Fonts/arial.ttf",
+            "C:/Windows/Fonts/segoeui.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        ]:
+            if os.path.exists(font_path):
+                font_note = ImageFont.truetype(font_path, 18)
+                break
+        else:
+            raise FileNotFoundError
+    except Exception:
+        font_note = ImageFont.load_default()
+
+    note = note or f"Noi dung QR: {content}"
+
+    dummy = Image.new("RGB", (1, 1))
+    dd = ImageDraw.Draw(dummy)
+    bbox = dd.textbbox((0, 0), note, font=font_note)
+    note_w = bbox[2] - bbox[0]
+    note_h = bbox[3] - bbox[1]
+
+    img_w = max(qr_px + margin * 2, note_w + margin * 2)
+    img_h = qr_px + margin * 2 + note_h + 18
+    img = Image.new("RGB", (img_w, img_h), "white")
+    draw = ImageDraw.Draw(img)
+
+    qr_x = (img_w - qr_px) // 2
+    qr_y = margin
+
+    for r in range(size):
+        for c in range(size):
+            v = qr.mat[r][c]
+            bit = v & 1 if v is not None else 0
+            x0 = qr_x + c * module
+            y0 = qr_y + r * module
+            color = "black" if bit else "white"
+            draw.rectangle([x0, y0, x0 + module - 1, y0 + module - 1], fill=color)
+
+    note_x = (img_w - note_w) // 2
+    note_y = qr_y + qr_px + 10
+    draw.text((note_x, note_y), note, fill="black", font=font_note)
+    return img
+
+
+def text_qr_bytes(content: str, note: str = "") -> bytes:
+    """Tra ve PNG bytes cua QR noi dung tuy y."""
+    img = make_text_qr(content, note=note)
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()

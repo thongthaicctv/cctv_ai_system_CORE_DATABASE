@@ -14,7 +14,7 @@ from hr.report_excel_exporter import export_all_reports_excel, export_handover_e
 
 
 from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QPixmap
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QFileDialog, QFormLayout,
     QFrame, QHBoxLayout, QHeaderView, QLabel,
@@ -29,7 +29,7 @@ import requests
 
 from core.config_manager import load_config
 
-from hr.qr_generator import employee_qr_bytes, make_employee_qr, save_employee_qr
+from hr.qr_generator import employee_qr_bytes, make_employee_qr, save_employee_qr, text_qr_bytes
 from hr.employee_manager import (
     add_employee, delete_employee, get_stats,
     load_employees, search_employees, update_employee,
@@ -534,6 +534,129 @@ class _QRViewDialog(QDialog):
 # ─────────────────────────────────────────────
 # HR TAB – Quản lý nhân sự
 # ─────────────────────────────────────────────
+class _CommandQRDialog(QDialog):
+    """Dialog tao QR lenh tuy y: STOP, DONG, GIAO, s01stop..."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Tao QR lenh")
+        self.setFixedSize(430, 560)
+        self.setStyleSheet(_BASE)
+        self._png_bytes = b""
+        self._build()
+        self._refresh_qr()
+
+    def _build(self):
+        lo = QVBoxLayout(self)
+        lo.setContentsMargins(24, 20, 24, 20)
+        lo.setSpacing(12)
+
+        title = QLabel("Tao QR lenh")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(
+            f"font-size:16px;font-weight:700;color:#ffffff;border:none;background:transparent;"
+        )
+        lo.addWidget(title)
+
+        self.txt_content = QLineEdit()
+        self.txt_content.setPlaceholderText("VD: s01stop, s01DONG, s08GIAO, s01dong:MADON")
+        self.txt_content.setText("s01stop")
+        self.txt_content.setFixedHeight(38)
+        self.txt_content.textChanged.connect(self._refresh_qr)
+        lo.addWidget(self.txt_content)
+
+        self.qr_lbl = QLabel()
+        self.qr_lbl.setFixedSize(320, 320)
+        self.qr_lbl.setAlignment(Qt.AlignCenter)
+        self.qr_lbl.setStyleSheet(
+            "background:#ffffff;border:2px solid #333;border-radius:8px;"
+        )
+        lo.addWidget(self.qr_lbl, alignment=Qt.AlignCenter)
+
+        self.note_lbl = QLabel()
+        self.note_lbl.setAlignment(Qt.AlignCenter)
+        self.note_lbl.setWordWrap(True)
+        self.note_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.note_lbl.setStyleSheet(
+            f"color:{_YELLOW};font-size:13px;font-weight:700;"
+            f"font-family:Consolas,monospace;border:none;background:transparent;"
+        )
+        lo.addWidget(self.note_lbl)
+
+        hint = QLabel("Nhap noi dung can ma hoa vao QR. Dong ghi chu nay giup kiem tra lai lenh da tao.")
+        hint.setWordWrap(True)
+        hint.setAlignment(Qt.AlignCenter)
+        hint.setStyleSheet(
+            f"color:{_MUTED};font-size:11px;border:none;background:transparent;"
+        )
+        lo.addWidget(hint)
+
+        btns = QHBoxLayout()
+        btn_save = QPushButton("Luu PNG")
+        btn_close = QPushButton("Dong")
+        btn_save.setStyleSheet(_BTN_PRIMARY)
+        btn_save.clicked.connect(self._save_png)
+        btn_close.clicked.connect(self.accept)
+        btns.addWidget(btn_save)
+        btns.addStretch()
+        btns.addWidget(btn_close)
+        lo.addLayout(btns)
+
+    def _set_placeholder(self, text):
+        self.qr_lbl.setText(text)
+        self.qr_lbl.setPixmap(QPixmap())
+        self.qr_lbl.setStyleSheet(
+            "background:#ffffff;color:#666;border:2px solid #333;border-radius:8px;"
+        )
+        self._png_bytes = b""
+
+    def _refresh_qr(self):
+        content = self.txt_content.text().strip()
+        if not content:
+            self.note_lbl.setText("Noi dung QR: -")
+            self._set_placeholder("Nhap noi dung QR")
+            return
+
+        note = f"Noi dung QR: {content}"
+        try:
+            self._png_bytes = text_qr_bytes(content, note=note)
+            pm = QPixmap()
+            pm.loadFromData(self._png_bytes)
+            scaled = pm.scaled(300, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.qr_lbl.setPixmap(scaled)
+            self.qr_lbl.setStyleSheet(
+                "background:#ffffff;border:2px solid #333;border-radius:8px;"
+            )
+            self.note_lbl.setText(note)
+        except Exception as exc:
+            self.note_lbl.setText(f"Loi tao QR: {exc}")
+            self._set_placeholder("Khong tao duoc QR")
+
+    def _save_png(self):
+        content = self.txt_content.text().strip()
+        if not content or not self._png_bytes:
+            QMessageBox.warning(self, "Thieu noi dung", "Vui long nhap noi dung QR.")
+            return
+
+        safe_name = "".join(
+            ch if ch.isalnum() or ch in ("-", "_") else "_"
+            for ch in content
+        ) or "QR_COMMAND"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Luu QR lenh",
+            f"QR_{safe_name}.png",
+            "PNG Image (*.png)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".png"):
+            path = f"{path}.png"
+        with open(path, "wb") as f:
+            f.write(self._png_bytes)
+        QMessageBox.information(self, "Da luu", f"Da luu QR:\n{path}")
+
+
 class _HRTab(QWidget):
     def __init__(self):
         super().__init__()
@@ -557,7 +680,7 @@ class _HRTab(QWidget):
 
         hdr.addStretch()
 
-        btn_stop = QPushButton("🛑 QR STOP")
+        btn_stop = QPushButton("QR lệnh")
         btn_stop.setStyleSheet("""
         QPushButton{
             background:#7f1d1d;
@@ -571,7 +694,7 @@ class _HRTab(QWidget):
             background:#dc2626;
         }
         """)
-        btn_stop.clicked.connect(self._create_stop_qr)
+        btn_stop.clicked.connect(self._open_command_qr)
 
         btn_add = QPushButton("+ Thêm nhân viên")
         btn_add.setStyleSheet(_BTN_PRIMARY)
@@ -756,6 +879,10 @@ class _HRTab(QWidget):
             delete_employee(emp_id)
             self._reload()
 
+
+    def _open_command_qr(self):
+        dlg = _CommandQRDialog(self)
+        dlg.exec()
 
     def _create_stop_qr(self):
         try:

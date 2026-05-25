@@ -32,7 +32,9 @@
         "11": [
             "11"
         ],
-        "12": []
+        "12": [
+            "12"
+        ]
     },
     "cleanup_enabled": true,
     "keep_index_days": 3,

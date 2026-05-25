@@ -1,6 +1,7 @@
 import re
 import time
 
+import cv2
 from PySide6.QtWidgets import QApplication
 
 from core.config_manager import load_config
@@ -240,6 +241,115 @@ class QRWorker:
                 return real_id
 
         return None
+
+    def _scanner_id_for_scan_camera(self, scan_cam_id):
+        scan_cam_id = str(scan_cam_id or "").strip()
+        if not scan_cam_id:
+            return ""
+
+        try:
+            return f"s{int(scan_cam_id):02d}"
+        except ValueError:
+            return f"s{scan_cam_id}"
+
+    def _handle_raw_business_scan(self, scan_cam_id, text):
+        """
+        Xử lý mã quét không có prefix sau các lệnh nghiệp vụ cố định.
+
+        Ví dụ:
+        - s01DONG, sau đó quét MADON thô => bắt đầu đóng và start record.
+        - Đang đóng đơn sỉ, quét mã kiện nhỏ thô => chỉ lưu DB.
+        - s08GIAO, sau đó quét MADON thô => bắt đầu giao nếu đơn đã đóng.
+        """
+        body = str(text or "").strip()
+        if not body:
+            return False
+
+        scanner_id = self._scanner_id_for_scan_camera(scan_cam_id)
+        if not scanner_id:
+            return False
+
+        state_action = self.packing_action_state.get(scanner_id)
+
+        if state_action and state_action.get("mode") == "packing_wait_master_order":
+            employee_id, employee_name = self._employee_info_for_scanner(scan_cam_id)
+
+            self._packing_log(
+                f"[ĐÓNG HÀNG XÁC NHẬN THÙNG LỚN] "
+                f"scanner={scanner_id}, "
+                f"mã_thùng_lớn={body}, "
+                f"employee={employee_id or ''} {employee_name or ''}"
+            )
+
+            self.packing_service.start_packing(
+                scanner_id=scanner_id,
+                master_order_code=body,
+                employee_code=employee_id,
+                employee_name=employee_name,
+            )
+
+            self._packing_log(
+                f"[ĐÓNG HÀNG - MỜI QUÉT KIỆN NHỎ] "
+                f"scanner={scanner_id}, "
+                f"mã_đơn={body}, "
+                f"trạng_thái=đang_đóng_hàng"
+            )
+
+            self._packing_sound("prompt_scan_packing_items")
+            self.packing_action_state.pop(scanner_id, None)
+            return True
+
+        if state_action and state_action.get("mode") == "handover_wait_delivery_order":
+            employee_id, employee_name = self._employee_info_for_scanner(scan_cam_id)
+
+            result = self.packing_service.start_handover(
+                scanner_id=scanner_id,
+                delivery_order_code=body,
+                delivery_employee_code=employee_id,
+                delivery_employee_name=employee_name,
+            )
+
+            if result and result.get("ok"):
+                self.packing_action_state[scanner_id] = {
+                    "mode": "handover_wait_box_code",
+                    "delivery_order_code": body,
+                }
+                self._packing_log(
+                    f"[GIAO HÀNG - MỜI QUÉT KIỆN ĐỂ XÁC NHẬN] "
+                    f"scanner_giao={scanner_id}, "
+                    f"mã_giao={body}, "
+                    f"trạng_thái=chờ_quét_mã_kiện"
+                )
+                self._packing_sound("prompt_scan_delivery_box")
+            else:
+                self.packing_action_state.pop(scanner_id, None)
+
+            return True
+
+        if state_action and state_action.get("mode") == "handover_wait_box_code":
+            self.packing_service.confirm_handover_box(
+                scanner_id=scanner_id,
+                packing_order_code=body,
+            )
+            self.packing_action_state.pop(scanner_id, None)
+            return True
+
+        if scanner_id in self.packing_service.pending_handover:
+            self.packing_service.confirm_handover_box(
+                scanner_id=scanner_id,
+                packing_order_code=body,
+            )
+            return True
+
+        active_packing = self.packing_service.db.get_active_packing_session(scanner_id)
+        if active_packing:
+            self.packing_service.add_packing_item(
+                scanner_id=scanner_id,
+                item_code=body,
+            )
+            return True
+
+        return False
 
     def _get_record_engine(self):
         app = QApplication.instance()
@@ -894,6 +1004,9 @@ class QRWorker:
                 order_ok()
                 print("CMD RECORD", target_ids, order_code)
 
+            return
+
+        if self._handle_raw_business_scan(scan_cam_id, text):
             return
 
         command = parse_qr_command(text)

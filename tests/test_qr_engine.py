@@ -55,6 +55,12 @@ class QREngineTests(unittest.TestCase):
         calls = []
 
         class StubCommandWorker:
+            def _parse_manual_cmd(self, text):
+                return ("s01", "test-order")
+
+            def _find_camera_by_sub(self, prefix):
+                return "1" if prefix == "s01" else None
+
             def _handle_command(self, scan_cam_id, text):
                 calls.append((scan_cam_id, text))
 
@@ -63,7 +69,7 @@ class QREngineTests(unittest.TestCase):
 
         engine.handle_manual_command("s01test-order")
 
-        self.assertEqual(calls, [("manual", "s01test-order")])
+        self.assertEqual(calls, [("1", "s01test-order")])
 
     def test_start_all_skips_duplicate_scan_rtsp_sources(self):
         cameras = [

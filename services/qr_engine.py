@@ -108,4 +108,23 @@ class QREngine:
             self.stop_camera(cam_id)
 
     def handle_manual_command(self, text):
-        self.command_worker._handle_command("manual", text)
+        scan_cam_id = "manual"
+        cmd = self.command_worker._parse_manual_cmd(text)
+
+        if cmd:
+            scanner_id, _body = cmd
+            scan_cam_id = self.command_worker._find_camera_by_sub(scanner_id) or scan_cam_id
+        else:
+            action_states = getattr(self.command_worker, "packing_action_state", {})
+            active_scanners = [
+                scanner_id
+                for scanner_id, state in action_states.items()
+                if state and state.get("mode")
+            ]
+            if len(active_scanners) == 1:
+                scan_cam_id = (
+                    self.command_worker._find_camera_by_sub(active_scanners[0])
+                    or scan_cam_id
+                )
+
+        self.command_worker._handle_command(scan_cam_id, text)

@@ -1,0 +1,19 @@
+{
+  "db": {
+    "type": "mysql",
+    "host": "192.168.1.100",
+    "port": 3306,
+    "database": "atg_order_system",
+    "user": "atg_app",
+    "password": "atg_password",
+    "charset": "utf8mb4",
+    "connect_timeout": 5,
+    "read_timeout": 10,
+    "write_timeout": 10
+  },
+  "app": {
+    "app_name": "ATG_PACKING_RECORDER",
+    "station_id": "PACKING_PC_01",
+    "storage_code": "MAIN_STORAGE"
+  }
+}

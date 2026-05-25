@@ -1,5 +1,6 @@
 import subprocess
 import platform
+import re
 
 
 def ping_host(ip):
@@ -20,7 +21,7 @@ def ping_host(ip):
         )
         output = result.stdout.lower()
 
-        if f"reply from {ip}".lower() in output:
+        if result.returncode == 0:
             latency = 1
 
             for line in output.splitlines():
@@ -34,6 +35,12 @@ def ping_host(ip):
                         )
                     except:
                         pass
+                elif "time<" in line:
+                    latency = 1
+                else:
+                    match = re.search(r"(\d+)\s*ms", line)
+                    if match:
+                        latency = int(match.group(1))
 
             return True, latency
 

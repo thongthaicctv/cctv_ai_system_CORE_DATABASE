@@ -1,4 +1,5 @@
-ready_for_packing.wav
-invite_scan_order.wav
-invite_scan_box.wav
-box_confirm_ok.wav
+cần xây dựng database chung cho các máy chạy cùng mạng lan nọi bộ:
+mục dích: 
+máy 1 chạy ghi hình đóng dơn ecom ghi cơ sở dữ lieu
+máy 2 chạy phần mềm ghi hình quá trình giao hàng ecom quét đơn hàng trên băng truyền, cần check thông tin xem đơn hàng có trong cơ sở dữ lieu khong tránh giao nhầm hàng
+máy 3 chạy ghi hình đóng đơn sỉ + giao đơn sỉ
