@@ -10,7 +10,7 @@ if not exist ".venv\Scripts\python.exe" (
     set "PYTHON_BIN=.venv\Scripts\python.exe"
 )
 
-%PYTHON_BIN% -m pip install --upgrade pyinstaller
+%PYTHON_BIN% -m pip install --upgrade -r requirements_mysql.txt
 if errorlevel 1 goto :error
 
 %PYTHON_BIN% -m PyInstaller --noconfirm --clean build_onefile.spec

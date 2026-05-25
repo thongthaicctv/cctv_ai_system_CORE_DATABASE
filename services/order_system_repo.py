@@ -39,6 +39,17 @@ class OrderSystemRepo:
             (order_code, action_type, json.dumps(payload or {}, ensure_ascii=False)),
         )
 
+    def _packing_video_columns_cur(self, cur) -> set[str]:
+        cur.execute(
+            """
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'packing_videos'
+            """
+        )
+        return {row["COLUMN_NAME"] for row in cur.fetchall()}
+
     def _refresh_web_index_order_cur(self, cur, order_code: str) -> None:
         cur.execute(
             """
@@ -372,7 +383,7 @@ class OrderSystemRepo:
         self.finish_packing_session(
             order_code=order_code,
             packing_session_id=session_id,
-            total_items=1,
+            total_items=0,
             employee_code=employee_code,
             employee_name=employee_name,
         )
@@ -386,6 +397,9 @@ class OrderSystemRepo:
                 camera_id=camera_id,
                 camera_name=camera_name,
                 result=result,
+                video_type="ECOM",
+                item_report_enabled=False,
+                item_count=0,
             )
         return session_id
 
@@ -461,26 +475,57 @@ class OrderSystemRepo:
         duration_seconds: float = 0,
         file_size: int = 0,
         result: str = "done",
+        video_type: str = "ECOM",
+        item_report_enabled: bool = False,
+        item_count: int = 0,
     ) -> int:
         order_id = self.ensure_order(order_code)
+        video_type = (video_type or "ECOM").upper()
         file_name = os.path.basename(file_path or "")
         with self.db.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO packing_videos (
-                    order_id, order_code, packing_session_id, box_code,
-                    session_type, scanner_id, camera_id, camera_name,
-                    file_path, file_name, file_size, duration_seconds,
-                    start_time, end_time, result
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    order_id, order_code, packing_session_id, box_code or None,
-                    session_type, scanner_id, camera_id, camera_name,
-                    file_path, file_name, int(file_size or 0), float(duration_seconds or 0),
-                    start_time, end_time, result,
-                ),
-            )
+            columns = self._packing_video_columns_cur(cur)
+            has_video_type_columns = {
+                "video_type",
+                "item_report_enabled",
+                "item_count",
+            }.issubset(columns)
+
+            if has_video_type_columns:
+                cur.execute(
+                    """
+                    INSERT INTO packing_videos (
+                        order_id, order_code, packing_session_id, box_code,
+                        session_type, video_type, item_report_enabled, item_count,
+                        scanner_id, camera_id, camera_name,
+                        file_path, file_name, file_size, duration_seconds,
+                        start_time, end_time, result
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        order_id, order_code, packing_session_id, box_code or None,
+                        session_type, video_type, 1 if item_report_enabled else 0, int(item_count or 0),
+                        scanner_id, camera_id, camera_name,
+                        file_path, file_name, int(file_size or 0), float(duration_seconds or 0),
+                        start_time, end_time, result,
+                    ),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO packing_videos (
+                        order_id, order_code, packing_session_id, box_code,
+                        session_type, scanner_id, camera_id, camera_name,
+                        file_path, file_name, file_size, duration_seconds,
+                        start_time, end_time, result
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        order_id, order_code, packing_session_id, box_code or None,
+                        session_type, scanner_id, camera_id, camera_name,
+                        file_path, file_name, int(file_size or 0), float(duration_seconds or 0),
+                        start_time, end_time, result,
+                    ),
+                )
             video_id = int(cur.lastrowid)
             self._refresh_web_index_order_cur(cur, order_code)
             return video_id

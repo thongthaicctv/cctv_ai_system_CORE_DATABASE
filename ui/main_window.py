@@ -68,7 +68,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Pro Video AI System  - ATG Solution Version 3.2 visitor: www.annguyen.pro - https://camerathainguyen.com - ĐT: 0208 656 5555")
+        self.setWindowTitle("Pro Video AI System  - ATG Solution Version 3.4 visitor: www.annguyen.pro - https://camerathainguyen.com - ĐT: 0208 656 5555")
         self.resize(1366, 768)
         self.setMinimumSize(1280, 700)
         app_icon = QIcon(resource_path("icon.ico"))
@@ -141,7 +141,7 @@ class MainWindow(QMainWindow):
         side.setContentsMargins(12, 12, 12, 12)
         side.setSpacing(8)
 
-        logo = QLabel("Pro Video AI System  - ATG Solution Version 3.2 visitor: www.annguyen.pro - https://camerathainguyen.com - ĐT: 0208 656 5555")
+        logo = QLabel("Pro Video AI System  - ATG Solution Version 3.4 visitor: www.annguyen.pro - https://camerathainguyen.com - ĐT: 0208 656 5555")
         logo.setFont(QFont("Segoe UI", 15, QFont.Bold))
 
         side.addWidget(logo)

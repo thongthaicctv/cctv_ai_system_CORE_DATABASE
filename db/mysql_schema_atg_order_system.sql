@@ -142,6 +142,9 @@ CREATE TABLE IF NOT EXISTS packing_videos (
     packing_session_id BIGINT,
     box_code VARCHAR(150),
     session_type VARCHAR(50),
+    video_type VARCHAR(30) DEFAULT 'ECOM',
+    item_report_enabled TINYINT DEFAULT 0,
+    item_count INT DEFAULT 0,
     scanner_id VARCHAR(100),
     camera_id VARCHAR(100),
     camera_name VARCHAR(255),
@@ -161,11 +164,31 @@ CREATE TABLE IF NOT EXISTS packing_videos (
     CONSTRAINT fk_packing_videos_session FOREIGN KEY (packing_session_id) REFERENCES packing_sessions(id) ON DELETE SET NULL,
     INDEX idx_packing_videos_order_id (order_id),
     INDEX idx_packing_videos_order_code (order_code),
+    INDEX idx_packing_videos_video_type (video_type),
+    INDEX idx_packing_videos_item_report (item_report_enabled),
     INDEX idx_packing_videos_box_code (box_code),
     INDEX idx_packing_videos_scanner_id (scanner_id),
     INDEX idx_packing_videos_camera_id (camera_id),
     INDEX idx_packing_videos_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE packing_videos
+    ADD COLUMN IF NOT EXISTS video_type VARCHAR(30) DEFAULT 'ECOM' AFTER session_type,
+    ADD COLUMN IF NOT EXISTS item_report_enabled TINYINT DEFAULT 0 AFTER video_type,
+    ADD COLUMN IF NOT EXISTS item_count INT DEFAULT 0 AFTER item_report_enabled;
+
+CREATE INDEX IF NOT EXISTS idx_packing_videos_video_type ON packing_videos (video_type);
+CREATE INDEX IF NOT EXISTS idx_packing_videos_item_report ON packing_videos (item_report_enabled);
+
+CREATE OR REPLACE VIEW ecom_packing_videos AS
+SELECT *
+FROM packing_videos
+WHERE video_type = 'ECOM';
+
+CREATE OR REPLACE VIEW wholesale_packing_videos AS
+SELECT *
+FROM packing_videos
+WHERE video_type = 'WHOLESALE';
 
 CREATE TABLE IF NOT EXISTS conveyor_checks (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

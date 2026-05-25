@@ -10,6 +10,11 @@ from services.audio_service import employee_ok, order_ok, stop_ok, play_event_so
 from services.packing_service import PackingService
 from system_logger import log as system_log
 
+try:
+    from services.order_system_repo import OrderSystemRepo
+except Exception:
+    OrderSystemRepo = None
+
 
 from services.qr_decoder import decode_qr_texts, decode_qr_texts_fast, parse_qr_command
 from utils.url_helper import camera_rtsp_url, open_rtsp_capture
@@ -52,6 +57,14 @@ class QRWorker:
         # s01DONG -> chờ quét thùng lớn
         # s08GIAO -> chờ quét mã đơn, sau đó chờ quét thùng giao
         self.packing_action_state = {}
+        self.mysql_repo = None
+        if OrderSystemRepo:
+            try:
+                self.mysql_repo = OrderSystemRepo(app_name="ATG_QR_WORKER")
+                self.mysql_repo.heartbeat()
+            except Exception as exc:
+                self.mysql_repo = None
+                self._packing_log(f"[MYSQL WARNING] Khong ket noi duoc database LAN: {exc}")
 
 
     def run(self):
@@ -383,6 +396,9 @@ class QRWorker:
             state = self.state.get(target_id)
             if self._record_requested(state) and state.get("order_code") == order_code:
                 continue
+            if self._record_requested(state) and state.get("order_code"):
+                scanner_id = self._scanner_id_for_scan_camera(target_id)
+                self._save_mysql_ecom_video_before_stop(scanner_id, target_id, state)
 
             self.state.start_record(target_id, order_code=order_code)
             any_started = True
@@ -617,6 +633,106 @@ class QRWorker:
 
         return employee_id, employee_name
 
+    def _packing_item_count(self, session_id):
+        try:
+            with self.packing_service.db.connect() as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM packing_items
+                    WHERE session_id = ?
+                      AND IFNULL(is_deleted, 0) = 0
+                    """,
+                    (session_id,),
+                )
+                row = cur.fetchone()
+                return int(row["cnt"] or 0)
+        except Exception:
+            return 0
+
+    def _save_mysql_packing_video(
+        self,
+        order_code,
+        scanner_id,
+        session_type,
+        session_id,
+        target_id,
+        video_info,
+        result=None,
+    ):
+        if session_type == "handover":
+            return
+        if not self.mysql_repo or not order_code or not video_info.get("file_path"):
+            return
+
+        try:
+            if session_type == "packing":
+                video_type = "WHOLESALE"
+                item_count = self._packing_item_count(session_id)
+                item_report_enabled = True
+                mysql_session_id = self.mysql_repo.create_packing_session(
+                    order_code=order_code,
+                    scanner_id=scanner_id,
+                    legacy_session_id=session_id,
+                    order_type="WHOLESALE",
+                )
+                self.mysql_repo.finish_packing_session(
+                    order_code=order_code,
+                    packing_session_id=mysql_session_id,
+                    total_items=item_count,
+                )
+            else:
+                video_type = "ECOM"
+                item_count = 0
+                item_report_enabled = False
+                mysql_session_id = None
+
+            file_size = 0
+            if video_info.get("file_size_mb") is not None:
+                file_size = int(float(video_info.get("file_size_mb") or 0) * 1024 * 1024)
+
+            self.mysql_repo.add_packing_video(
+                order_code=order_code,
+                file_path=video_info.get("file_path"),
+                session_type=session_type,
+                packing_session_id=mysql_session_id,
+                scanner_id=scanner_id,
+                camera_id=str(target_id),
+                camera_name=str(target_id),
+                start_time=video_info.get("start_time"),
+                end_time=video_info.get("end_time"),
+                duration_seconds=float(video_info.get("duration_sec") or 0),
+                file_size=file_size,
+                result=result or "done",
+                video_type=video_type,
+                item_report_enabled=item_report_enabled,
+                item_count=item_count,
+            )
+            self._packing_log(
+                f"[MYSQL VIDEO] type={video_type}, order={order_code}, "
+                f"camera={target_id}, items={item_count}, file={video_info.get('file_path')}"
+            )
+        except Exception as exc:
+            self._packing_log(
+                f"[MYSQL VIDEO ERROR] order={order_code}, camera={target_id}, error={exc}"
+            )
+
+    def _save_mysql_ecom_video_before_stop(self, scanner_id, target_id, state):
+        order_code = (state or {}).get("order_code", "")
+        if not order_code:
+            return
+
+        video_info = self._get_last_video_info_from_state(target_id)
+        self._save_mysql_packing_video(
+            order_code=order_code,
+            scanner_id=scanner_id,
+            session_type="ecom_packing",
+            session_id=None,
+            target_id=target_id,
+            video_info=video_info,
+            result="done",
+        )
         
     def _packing_stop_record(self, scanner_id, order_code, session_type, session_id, result=None):
         """
@@ -685,6 +801,15 @@ class QRWorker:
                     f"camera={target_id}, "
                     f"result={result}, "
                     f"file={video_info.get('file_path')}"
+                )
+                self._save_mysql_packing_video(
+                    order_code=order_code,
+                    scanner_id=scanner_id,
+                    session_type=session_type,
+                    session_id=session_id,
+                    target_id=target_id,
+                    video_info=video_info,
+                    result=result,
                 )
 
             except Exception as exc:
@@ -946,6 +1071,8 @@ class QRWorker:
                 target_ids = self._target_camera_ids(scan_cam_id)
 
                 for target_id in target_ids:
+                    st = self.state.get(target_id)
+                    self._save_mysql_ecom_video_before_stop(scanner_id, target_id, st)
                     self.state.stop_record(target_id, clear_employee=False)
 
                 stop_ok()
@@ -1014,7 +1141,10 @@ class QRWorker:
         target_ids = self._target_camera_ids(scan_cam_id)
 
         if action == "stop":
+            scanner_id = self._scanner_id_for_scan_camera(scan_cam_id)
             for target_id in target_ids:
+                st = self.state.get(target_id)
+                self._save_mysql_ecom_video_before_stop(scanner_id, target_id, st)
                 self.state.stop_record(target_id, clear_employee=False)
             stop_ok()
             return

@@ -4,7 +4,18 @@ import os
 from PyInstaller.utils.hooks import collect_submodules
 
 
-hiddenimports = ["zxingcpp", "et_xmlfile"] + collect_submodules("openpyxl")
+hiddenimports = [
+    "cv2",
+    "PIL",
+    "PIL.Image",
+    "PIL.ImageDraw",
+    "PIL.ImageFont",
+    "pymysql",
+    "requests",
+    "zxingcpp",
+    "et_xmlfile",
+    "PySide6.QtPrintSupport",
+] + collect_submodules("openpyxl") + collect_submodules("pymysql")
 
 binaries = []
 ffmpeg_path = r"C:\ffmpeg\bin\ffmpeg.exe"
@@ -21,6 +32,7 @@ datas = [
     ("logo_app.png", "."),
     ("banner.png", "."),
     ("hr/employees.json", "hr"),
+    ("requirements_mysql.txt", "."),
 ]
 
 if os.path.exists(os.path.join("data", "report.db")):
