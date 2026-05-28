@@ -151,7 +151,7 @@
     },
     "http_enabled": true,
     "http_port": 28080,
-    "ddns_domain": "suabap.cameraddns.net",
+    "ddns_domain": "192.168.110.86",
     "http_user": "admin",
     "http_pass": "12345678",
     "alert_enabled": false

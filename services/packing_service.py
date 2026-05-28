@@ -3,7 +3,7 @@
 
 from datetime import datetime
 
-from db.packing_db import PackingDB
+from db.packing_mysql_db import MySQLPackingDB
 
 
 def now_str():
@@ -26,13 +26,15 @@ class PackingService:
 
     def __init__(
         self,
-        db_path="db/packing.db",
+        db_path=None,
         start_record_callback=None,
         stop_record_callback=None,
         sound_callback=None,
         log_callback=None,
     ):
-        self.db = PackingDB(db_path=db_path)
+        self.db = MySQLPackingDB()
+        self._memory_session_seq = 0
+        self._memory_sessions = {}
 
         # Callback nối với hệ thống record hiện tại
         self.start_record_callback = start_record_callback
@@ -61,6 +63,10 @@ class PackingService:
             self.log_callback(msg)
         else:
             print(msg)
+
+    def _next_memory_session_id(self):
+        self._memory_session_seq += 1
+        return -self._memory_session_seq
 
     def play_sound(self, sound_name):
         """
@@ -140,7 +146,11 @@ class PackingService:
         """
 
         # 0. Chặn đóng lại đơn đã giao thành công
-        success_handover = self.db.find_success_handover(master_order_code)
+        try:
+            success_handover = self.db.find_success_handover(master_order_code)
+        except Exception as exc:
+            success_handover = None
+            self.log(f"[MYSQL WARNING] find_success_handover failed, continue record: {exc}")
 
         if success_handover:
             self.log(
@@ -162,7 +172,11 @@ class PackingService:
             }
 
         # 1. Chặn scanner đang có phiên đóng chưa stop
-        active = self.db.get_active_packing_session(scanner_id)
+        try:
+            active = self.db.get_active_packing_session(scanner_id)
+        except Exception as exc:
+            active = self._memory_sessions.get(scanner_id)
+            self.log(f"[MYSQL WARNING] get_active_packing_session failed, use memory state: {exc}")
 
         if active:
             current_order = active["master_order_code"]
@@ -182,12 +196,24 @@ class PackingService:
             }
 
         # 2. Tạo phiên đóng hàng mới
-        session_id = self.db.create_packing_session(
-            master_order_code=master_order_code,
-            scanner_id=scanner_id,
-            employee_code=employee_code,
-            employee_name=employee_name,
-        )
+        try:
+            session_id = self.db.create_packing_session(
+                master_order_code=master_order_code,
+                scanner_id=scanner_id,
+                employee_code=employee_code,
+                employee_name=employee_name,
+            )
+        except Exception as exc:
+            session_id = self._next_memory_session_id()
+            self._memory_sessions[scanner_id] = {
+                "id": session_id,
+                "master_order_code": master_order_code,
+                "packing_scanner_id": scanner_id,
+                "employee_code": employee_code or "",
+                "employee_name": employee_name or "",
+                "total_items": 0,
+            }
+            self.log(f"[MYSQL ERROR] create_packing_session failed, record still starts: {exc}")
 
         self.log(
             f"[PACKING START] scanner={scanner_id}, "
@@ -220,7 +246,11 @@ class PackingService:
         => chỉ lưu database
         => không start record mới
         """
-        active = self.db.get_active_packing_session(scanner_id)
+        try:
+            active = self.db.get_active_packing_session(scanner_id)
+        except Exception as exc:
+            active = self._memory_sessions.get(scanner_id)
+            self.log(f"[MYSQL WARNING] get_active_packing_session failed, use memory state: {exc}")
 
         if not active:
             self.log(
@@ -238,11 +268,19 @@ class PackingService:
         session_id = active["id"]
         master_order_code = active["master_order_code"]
 
-        scan_index = self.db.add_packing_item(
-            session_id=session_id,
-            master_order_code=master_order_code,
-            item_code=item_code
-        )
+        try:
+            scan_index = self.db.add_packing_item(
+                session_id=session_id,
+                master_order_code=master_order_code,
+                item_code=item_code
+            )
+        except Exception as exc:
+            if active is self._memory_sessions.get(scanner_id):
+                active["total_items"] = int(active.get("total_items") or 0) + 1
+                scan_index = active["total_items"]
+            else:
+                scan_index = 0
+            self.log(f"[MYSQL ERROR] add_packing_item failed, continue record: {exc}")
 
         self.log(
             f"[PACKING ITEM] scanner={scanner_id}, "
@@ -265,7 +303,11 @@ class PackingService:
         s01xoa        => xóa mã kiện nhỏ vừa quét gần nhất
         s01xoa:ABC999 => xóa lần quét gần nhất của mã ABC999
         """
-        active = self.db.get_active_packing_session(scanner_id)
+        try:
+            active = self.db.get_active_packing_session(scanner_id)
+        except Exception as exc:
+            active = self._memory_sessions.get(scanner_id)
+            self.log(f"[MYSQL WARNING] get_active_packing_session failed, use memory state: {exc}")
 
         if not active:
             self.log(
@@ -282,10 +324,14 @@ class PackingService:
         session_id = active["id"]
         master_order_code = active["master_order_code"]
 
-        deleted = self.db.delete_last_packing_item(
-            session_id=session_id,
-            item_code=item_code
-        )
+        try:
+            deleted = self.db.delete_last_packing_item(
+                session_id=session_id,
+                item_code=item_code
+            )
+        except Exception as exc:
+            deleted = None
+            self.log(f"[MYSQL ERROR] delete_last_packing_item failed: {exc}")
 
         if not deleted:
             self.log(
@@ -333,7 +379,11 @@ class PackingService:
         - Nếu packing_db.py chưa có update_packing_employee thì vẫn chạy tiếp.
         - Không làm hỏng logic stop cũ.
         """
-        active = self.db.get_active_packing_session(scanner_id)
+        try:
+            active = self.db.get_active_packing_session(scanner_id)
+        except Exception as exc:
+            active = self._memory_sessions.get(scanner_id)
+            self.log(f"[MYSQL WARNING] get_active_packing_session failed, use memory state: {exc}")
 
         if not active:
             self.log(f"[PACKING STOP ERROR] Scanner {scanner_id} không có đơn đang đóng.")
@@ -348,7 +398,12 @@ class PackingService:
         session_id = active["id"]
         master_order_code = active["master_order_code"]
 
-        total_items = self.db.finish_packing_session(session_id)
+        try:
+            total_items = self.db.finish_packing_session(session_id)
+        except Exception as exc:
+            total_items = int(active.get("total_items") or 0)
+            self.log(f"[MYSQL ERROR] finish_packing_session failed, stop record still runs: {exc}")
+        self._memory_sessions.pop(scanner_id, None)
 
         # Lưu nhân viên đóng nếu DB đã hỗ trợ
         try:
@@ -414,7 +469,11 @@ class PackingService:
         """
 
         # 0. Chặn giao lại đơn đã giao thành công
-        success_handover = self.db.find_success_handover(delivery_order_code)
+        try:
+            success_handover = self.db.find_success_handover(delivery_order_code)
+        except Exception as exc:
+            success_handover = None
+            self.log(f"[MYSQL WARNING] find_success_handover failed, continue handover record: {exc}")
 
         if success_handover:
             self.log(
@@ -426,10 +485,13 @@ class PackingService:
                 f"lý_do=Đơn hàng đã được giao thành công trước đó"
             )
 
-            self.db.create_handover_failed_already_delivered(
-                delivery_order_code=delivery_order_code,
-                scanner_id=scanner_id
-            )
+            try:
+                self.db.create_handover_failed_already_delivered(
+                    delivery_order_code=delivery_order_code,
+                    scanner_id=scanner_id
+                )
+            except Exception as exc:
+                self.log(f"[MYSQL ERROR] create_handover_failed_already_delivered failed: {exc}")
 
             self.play_sound("order_already_delivered")
 
@@ -441,7 +503,15 @@ class PackingService:
             }
 
         # 1. Check đơn đã đóng xong chưa
-        done_packing = self.db.find_done_packing_order(delivery_order_code)
+        try:
+            done_packing = self.db.find_done_packing_order(delivery_order_code)
+        except Exception as exc:
+            done_packing = {
+                "id": self._next_memory_session_id(),
+                "master_order_code": delivery_order_code,
+                "packing_scanner_id": "MYSQL_UNKNOWN",
+            }
+            self.log(f"[MYSQL ERROR] find_done_packing_order failed, handover record still starts: {exc}")
 
         if not done_packing:
             self.log(
@@ -452,10 +522,13 @@ class PackingService:
                 f"lý_do=Đơn hàng chưa được đóng xong"
             )
 
-            self.db.create_handover_failed_not_packed(
-                delivery_order_code=delivery_order_code,
-                scanner_id=scanner_id
-            )
+            try:
+                self.db.create_handover_failed_not_packed(
+                    delivery_order_code=delivery_order_code,
+                    scanner_id=scanner_id
+                )
+            except Exception as exc:
+                self.log(f"[MYSQL ERROR] create_handover_failed_not_packed failed: {exc}")
 
             self.play_sound("order_not_packed")
 
@@ -609,6 +682,9 @@ class PackingService:
                 delivery_employee_code=delivery_employee_code,
                 delivery_employee_name=delivery_employee_name,
             )
+        except Exception as exc:
+            handover_id = None
+            self.log(f"[MYSQL ERROR] create_handover_result failed, record continues: {exc}")
         except TypeError:
             # DB cũ chưa hỗ trợ delivery_employee_code/name
             handover_id = self.db.create_handover_result(

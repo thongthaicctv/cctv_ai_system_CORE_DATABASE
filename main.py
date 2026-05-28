@@ -6,9 +6,6 @@ import msvcrt
 
 from license.license_dialog import LicenseDialog
 
-from hr.report_db import init_report_db
-
-
 from core.config_manager import load_config
 from core.resource_paths import resource_path
 from services.cleanup_service import cleanup_index_and_video_sync
@@ -95,8 +92,6 @@ def main():
     app_icon = QIcon(resource_path("icon.ico"))
     if not app_icon.isNull():
         app.setWindowIcon(app_icon)
-
-    init_report_db()
 
     # =========================
     # STARTUP VIDEO MAINTENANCE

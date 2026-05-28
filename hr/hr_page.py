@@ -6,11 +6,9 @@ import os
 import subprocess
 import sys
 import traceback
+import webbrowser
 
 from datetime import datetime
-
-
-from hr.report_excel_exporter import export_all_reports_excel, export_handover_excel
 
 
 from PySide6.QtCore import Qt, QThread, Signal
@@ -1562,6 +1560,28 @@ class _VideoTab(QWidget):
                 
             
     # ── Data ──────────────────────────────────
+    def _export_report_all(self):
+        from_date, to_date = self._validate_report_dates()
+        if not from_date:
+            return
+        port = int(self._config.get("http_port", 18080))
+        url = (
+            f"http://127.0.0.1:{port}/reports/order-status.xlsx"
+            f"?from_date={from_date}&to_date={to_date}"
+        )
+        webbrowser.open(url)
+
+    def _export_handover_report(self):
+        from_date, to_date = self._validate_report_dates()
+        if not from_date:
+            return
+        port = int(self._config.get("http_port", 18080))
+        url = (
+            f"http://127.0.0.1:{port}/reports/order-status.xlsx"
+            f"?from_date={from_date}&to_date={to_date}"
+        )
+        webbrowser.open(url)
+
     def _load(self):
         idx = load_index(self._storage)
         self._videos = idx.get("videos", [])

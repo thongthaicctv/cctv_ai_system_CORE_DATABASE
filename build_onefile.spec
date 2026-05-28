@@ -25,7 +25,7 @@ if os.path.exists(ffmpeg_path):
 datas = [
     ("assets", "assets"),
     ("note", "note"),
-    ("db", "db"),
+    ("db/mysql_schema_atg_order_system.sql", "db"),
     
     ("icon.ico", "."),
     ("logo.png", "."),
@@ -34,9 +34,6 @@ datas = [
     ("hr/employees.json", "hr"),
     ("requirements_mysql.txt", "."),
 ]
-
-if os.path.exists(os.path.join("data", "report.db")):
-    datas.append((os.path.join("data", "report.db"), "data"))
 
 for source_dir in (
     os.path.join("data", "wechat_qrcode_models"),

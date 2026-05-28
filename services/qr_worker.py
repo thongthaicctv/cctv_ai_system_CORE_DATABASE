@@ -29,6 +29,7 @@ RTSP_READ_TIMEOUT_MSEC = 5000
 FULL_SCAN_EVERY_FRAMES = 2
 SLOW_SCAN_EVERY_FRAMES = 8
 SCAN_MAX_WIDTH = 1280
+DEFAULT_RECORD_SCANNER_ID = "s01"
 
 
 class QRWorker:
@@ -43,7 +44,6 @@ class QRWorker:
         self.frame_index = 0
 
         self.packing_service = PackingService(
-            db_path="db/packing.db",
             start_record_callback=self._packing_start_record,
             stop_record_callback=self._packing_stop_record,
             sound_callback=self._packing_sound,
@@ -264,6 +264,12 @@ class QRWorker:
             return f"s{int(scan_cam_id):02d}"
         except ValueError:
             return f"s{scan_cam_id}"
+
+    def _default_record_scan_camera_id(self):
+        return self._find_camera_by_sub(DEFAULT_RECORD_SCANNER_ID) or "1"
+
+    def _default_record_targets(self):
+        return self._target_camera_ids(self._default_record_scan_camera_id())
 
     def _handle_raw_business_scan(self, scan_cam_id, text):
         """
@@ -634,6 +640,11 @@ class QRWorker:
         return employee_id, employee_name
 
     def _packing_item_count(self, session_id):
+        if hasattr(self.packing_service.db, "count_packing_items"):
+            try:
+                return self.packing_service.db.count_packing_items(session_id)
+            except Exception:
+                return 0
         try:
             with self.packing_service.db.connect() as conn:
                 cur = conn.cursor()
@@ -652,6 +663,8 @@ class QRWorker:
             return 0
 
     def _sync_mysql_small_packages(self, order_code, scanner_id, sqlite_session_id, mysql_session_id):
+        if getattr(self.packing_service.db, "is_mysql", False):
+            return
         if not self.mysql_repo or not sqlite_session_id or not mysql_session_id:
             return
 
@@ -850,15 +863,16 @@ class QRWorker:
                     f"result={result}, "
                     f"file={video_info.get('file_path')}"
                 )
-                self._save_mysql_packing_video(
-                    order_code=order_code,
-                    scanner_id=scanner_id,
-                    session_type=session_type,
-                    session_id=session_id,
-                    target_id=target_id,
-                    video_info=video_info,
-                    result=result,
-                )
+                if not getattr(self.packing_service.db, "is_mysql", False):
+                    self._save_mysql_packing_video(
+                        order_code=order_code,
+                        scanner_id=scanner_id,
+                        session_type=session_type,
+                        session_id=session_id,
+                        target_id=target_id,
+                        video_info=video_info,
+                        result=result,
+                    )
 
             except Exception as exc:
                 self._packing_log(
@@ -1186,18 +1200,19 @@ class QRWorker:
 
         command = parse_qr_command(text)
         action = command["action"]
-        target_ids = self._target_camera_ids(scan_cam_id)
-
         if action == "stop":
-            scanner_id = self._scanner_id_for_scan_camera(scan_cam_id)
+            scanner_id = DEFAULT_RECORD_SCANNER_ID
+            target_ids = self._default_record_targets()
             for target_id in target_ids:
                 st = self.state.get(target_id)
                 self._save_mysql_ecom_video_before_stop(scanner_id, target_id, st)
                 self.state.stop_record(target_id, clear_employee=False)
             stop_ok()
+            print("CMD DEFAULT STOP", DEFAULT_RECORD_SCANNER_ID, target_ids)
             return
 
         if action == "employee":
+            target_ids = self._target_camera_ids(scan_cam_id)
             for target_id in target_ids:
                 self.state.assign_employee(
                     target_id,
@@ -1215,8 +1230,10 @@ class QRWorker:
         if not order_code:
             return
 
+        target_ids = self._default_record_targets()
         if self._start_order_targets(target_ids, order_code):
             order_ok()
+            print("CMD DEFAULT RECORD", DEFAULT_RECORD_SCANNER_ID, target_ids, order_code)
 
     def _target_camera_ids(self, scan_cam_id):
         data = load_config()
