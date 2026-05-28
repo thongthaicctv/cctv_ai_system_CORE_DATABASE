@@ -245,6 +245,34 @@ CREATE TABLE IF NOT EXISTS wholesale_box_items (
     INDEX idx_wholesale_box_items_scanned_at (scanned_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS packing_small_packages (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_id BIGINT,
+    order_code VARCHAR(100) NOT NULL,
+    packing_session_id BIGINT,
+    legacy_item_id BIGINT,
+    small_package_code VARCHAR(150) NOT NULL,
+    scan_index INT DEFAULT 1,
+    scan_status VARCHAR(50) DEFAULT 'PACKED',
+    is_deleted TINYINT DEFAULT 0,
+    deleted_at DATETIME,
+    deleted_reason TEXT,
+    scanner_id VARCHAR(100),
+    employee_code VARCHAR(100),
+    employee_name VARCHAR(255),
+    scanned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_packing_small_packages_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL,
+    CONSTRAINT fk_packing_small_packages_session FOREIGN KEY (packing_session_id) REFERENCES packing_sessions(id) ON DELETE SET NULL,
+    INDEX idx_packing_small_packages_order_code (order_code),
+    INDEX idx_packing_small_packages_code (small_package_code),
+    INDEX idx_packing_small_packages_session (packing_session_id),
+    INDEX idx_packing_small_packages_deleted (is_deleted),
+    INDEX idx_packing_small_packages_scanned_at (scanned_at),
+    INDEX idx_packing_small_packages_legacy (legacy_item_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS wholesale_handover_checks (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     master_order_id BIGINT,

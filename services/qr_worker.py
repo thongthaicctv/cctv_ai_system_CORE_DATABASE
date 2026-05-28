@@ -651,6 +651,48 @@ class QRWorker:
         except Exception:
             return 0
 
+    def _sync_mysql_small_packages(self, order_code, scanner_id, sqlite_session_id, mysql_session_id):
+        if not self.mysql_repo or not sqlite_session_id or not mysql_session_id:
+            return
+
+        try:
+            with self.packing_service.db.connect() as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    SELECT
+                        pi.id,
+                        pi.item_code,
+                        pi.scan_time,
+                        pi.scan_index,
+                        ps.employee_code,
+                        ps.employee_name
+                    FROM packing_items pi
+                    LEFT JOIN packing_sessions ps ON ps.id = pi.session_id
+                    WHERE pi.session_id = ?
+                      AND IFNULL(pi.is_deleted, 0) = 0
+                    ORDER BY pi.scan_index ASC, pi.id ASC
+                    """,
+                    (sqlite_session_id,),
+                )
+                rows = cur.fetchall()
+
+            for row in rows:
+                self.mysql_repo.add_wholesale_child_item(
+                    master_order_code=order_code,
+                    child_order_code=row["item_code"],
+                    packing_session_id=mysql_session_id,
+                    scanner_id=scanner_id,
+                    employee_code=row["employee_code"] or "",
+                    employee_name=row["employee_name"] or "",
+                    legacy_item_id=row["id"],
+                    scanned_at=row["scan_time"],
+                )
+        except Exception as exc:
+            self._packing_log(
+                f"[MYSQL SMALL PACKAGE SYNC ERROR] order={order_code}, session={sqlite_session_id}, error={exc}"
+            )
+
     def _save_mysql_packing_video(
         self,
         order_code,
@@ -676,6 +718,12 @@ class QRWorker:
                     scanner_id=scanner_id,
                     legacy_session_id=session_id,
                     order_type="WHOLESALE",
+                )
+                self._sync_mysql_small_packages(
+                    order_code=order_code,
+                    scanner_id=scanner_id,
+                    sqlite_session_id=session_id,
+                    mysql_session_id=mysql_session_id,
                 )
                 self.mysql_repo.finish_packing_session(
                     order_code=order_code,

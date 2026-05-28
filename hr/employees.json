@@ -80,7 +80,7 @@
   },
   {
     "id": "nv4",
-    "name": "Hiểu",
+    "name": "Nguyễn Văn Hiểu",
     "position": "VC",
     "department": "Kho",
     "phone": "09032323",
@@ -112,9 +112,9 @@
   },
   {
     "id": "nv2",
-    "name": "Thac Trung",
-    "position": "Bố Tướng",
-    "department": "Quản lý",
+    "name": "Nguyễn Thạc Trung",
+    "position": "CTV",
+    "department": "Đóng Hàng",
     "phone": "0987654321",
     "email": "1@gmail.com",
     "camera_zone": [
@@ -128,7 +128,7 @@
   },
   {
     "id": "nv3",
-    "name": "mạnh",
+    "name": "Nguyễn Văn Mạnh",
     "position": "đóng hàng ecom",
     "department": "ecom",
     "phone": "090",

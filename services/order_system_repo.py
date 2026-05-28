@@ -50,6 +50,22 @@ class OrderSystemRepo:
         )
         return {row["COLUMN_NAME"] for row in cur.fetchall()}
 
+    def _table_exists_cur(self, cur, table_name: str) -> bool:
+        cur.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = %s
+            """,
+            (table_name,),
+        )
+        row = cur.fetchone()
+        return bool(row and row.get("cnt"))
+
+    def _has_packing_small_packages_cur(self, cur) -> bool:
+        return self._table_exists_cur(cur, "packing_small_packages")
+
     def _refresh_web_index_order_cur(self, cur, order_code: str) -> None:
         cur.execute(
             """
@@ -619,77 +635,90 @@ class OrderSystemRepo:
         scanner_id: str = "",
         employee_code: str = "",
         employee_name: str = "",
+        legacy_item_id: Optional[int] = None,
+        scanned_at: Optional[str] = None,
     ) -> int:
         master_order_id = self.ensure_order(master_order_code, order_type="WHOLESALE")
         child_order_id = self.ensure_order(child_order_code, order_type="WHOLESALE_CHILD")
         with self.db.cursor() as cur:
+            has_small_packages = self._has_packing_small_packages_cur(cur)
+            if has_small_packages and legacy_item_id:
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM packing_small_packages
+                    WHERE order_code=%s
+                      AND packing_session_id <=> %s
+                      AND legacy_item_id=%s
+                    LIMIT 1
+                    """,
+                    (master_order_code, packing_session_id, legacy_item_id),
+                )
+                existing_sync = cur.fetchone()
+                if existing_sync:
+                    return int(existing_sync["id"])
+
+            index_table = "packing_small_packages" if has_small_packages else "wholesale_box_items"
+            order_column = "order_code" if has_small_packages else "master_order_code"
             cur.execute(
-                """
+                f"""
                 SELECT COALESCE(MAX(scan_index), 0) + 1 AS next_index
-                FROM wholesale_box_items
-                WHERE master_order_code=%s
+                FROM {index_table}
+                WHERE {order_column}=%s
                   AND is_deleted=0
                 """,
                 (master_order_code,),
             )
             scan_index = int(cur.fetchone()["next_index"])
-            cur.execute(
-                """
-                SELECT id
-                FROM wholesale_box_items
-                WHERE master_order_code=%s
-                  AND child_order_code=%s
-                  AND is_deleted=0
-                LIMIT 1
-                """,
-                (master_order_code, child_order_code),
-            )
-            existing = cur.fetchone()
-            if existing:
+
+            item_id = 0
+            if has_small_packages:
                 cur.execute(
                     """
-                    UPDATE wholesale_box_items
-                    SET box_code=%s,
-                        packing_session_id=%s,
-                        scanner_id=%s,
-                        employee_code=%s,
-                        employee_name=%s,
-                        scan_status='PACKED',
-                        updated_at=NOW()
-                    WHERE id=%s
-                    """,
-                    (
-                        box_code or child_order_code,
-                        packing_session_id,
-                        scanner_id,
-                        employee_code,
-                        employee_name,
-                        existing["id"],
-                    ),
-                )
-                item_id = int(existing["id"])
-            else:
-                cur.execute(
-                    """
-                    INSERT INTO wholesale_box_items (
-                        master_order_id, master_order_code, child_order_id, child_order_code,
-                        packing_session_id, box_code, scan_index, scanner_id,
-                        employee_code, employee_name
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO packing_small_packages (
+                        order_id, order_code, packing_session_id, legacy_item_id,
+                        small_package_code, scan_index, scanner_id,
+                        employee_code, employee_name, scanned_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, NOW()))
                     """,
                     (
                         master_order_id,
                         master_order_code,
-                        child_order_id,
-                        child_order_code,
                         packing_session_id,
-                        box_code or child_order_code,
+                        legacy_item_id,
+                        child_order_code,
                         scan_index,
                         scanner_id,
                         employee_code,
                         employee_name,
+                        scanned_at,
                     ),
                 )
+                item_id = int(cur.lastrowid)
+
+            cur.execute(
+                """
+                INSERT INTO wholesale_box_items (
+                    master_order_id, master_order_code, child_order_id, child_order_code,
+                    packing_session_id, box_code, scan_index, scanner_id,
+                    employee_code, employee_name, scanned_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, NOW()))
+                """,
+                (
+                    master_order_id,
+                    master_order_code,
+                    child_order_id,
+                    child_order_code,
+                    packing_session_id,
+                    box_code or child_order_code,
+                    scan_index,
+                    scanner_id,
+                    employee_code,
+                    employee_name,
+                    scanned_at,
+                ),
+            )
+            if not item_id:
                 item_id = int(cur.lastrowid)
             cur.execute(
                 """
@@ -703,6 +732,100 @@ class OrderSystemRepo:
             self._refresh_web_index_order_cur(cur, child_order_code)
             return item_id
 
+    def soft_delete_wholesale_child_item(
+        self,
+        master_order_code: str,
+        child_order_code: str = "",
+        packing_session_id: Optional[int] = None,
+        reason: str = "Xoa ma kien nho quet nham",
+    ) -> Optional[int]:
+        with self.db.cursor() as cur:
+            has_small_packages = self._has_packing_small_packages_cur(cur)
+            if has_small_packages:
+                filters = [
+                    "order_code=%s",
+                    "IFNULL(is_deleted, 0)=0",
+                ]
+                params: list[Any] = [master_order_code]
+                if child_order_code:
+                    filters.append("small_package_code=%s")
+                    params.append(child_order_code)
+                if packing_session_id:
+                    filters.append("packing_session_id=%s")
+                    params.append(packing_session_id)
+
+                cur.execute(
+                    f"""
+                    SELECT id, small_package_code
+                    FROM packing_small_packages
+                    WHERE {" AND ".join(filters)}
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    params,
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+
+                cur.execute(
+                    """
+                    UPDATE packing_small_packages
+                    SET is_deleted=1,
+                        deleted_at=NOW(),
+                        deleted_reason=%s
+                    WHERE id=%s
+                    """,
+                    (reason, row["id"]),
+                )
+                deleted_code = row["small_package_code"]
+                deleted_id = int(row["id"])
+            else:
+                filters = [
+                    "master_order_code=%s",
+                    "IFNULL(is_deleted, 0)=0",
+                ]
+                params = [master_order_code]
+                if child_order_code:
+                    filters.append("child_order_code=%s")
+                    params.append(child_order_code)
+                if packing_session_id:
+                    filters.append("packing_session_id=%s")
+                    params.append(packing_session_id)
+
+                cur.execute(
+                    f"""
+                    SELECT id, child_order_code AS small_package_code
+                    FROM wholesale_box_items
+                    WHERE {" AND ".join(filters)}
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    params,
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                deleted_code = row["small_package_code"]
+                deleted_id = int(row["id"])
+
+            cur.execute(
+                """
+                UPDATE wholesale_box_items
+                SET is_deleted=1,
+                    deleted_at=NOW(),
+                    deleted_reason=%s
+                WHERE master_order_code=%s
+                  AND child_order_code=%s
+                  AND IFNULL(is_deleted, 0)=0
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (reason, master_order_code, deleted_code),
+            )
+            self._refresh_web_index_order_cur(cur, master_order_code)
+            return deleted_id
+
     def check_wholesale_handover(
         self,
         master_order_code: str,
@@ -715,17 +838,32 @@ class OrderSystemRepo:
     ) -> Dict[str, Any]:
         master_order_id = self.ensure_order(master_order_code, order_type="WHOLESALE")
         with self.db.cursor() as cur:
-            cur.execute(
-                """
-                SELECT child_order_code, packing_session_id
-                FROM wholesale_box_items
-                WHERE master_order_code=%s
-                  AND is_deleted=0
-                  AND (child_order_code=%s OR box_code=%s)
-                LIMIT 1
-                """,
-                (master_order_code, scanned_code, scanned_code),
-            )
+            if self._has_packing_small_packages_cur(cur):
+                cur.execute(
+                    """
+                    SELECT
+                        small_package_code AS child_order_code,
+                        packing_session_id
+                    FROM packing_small_packages
+                    WHERE order_code=%s
+                      AND IFNULL(is_deleted, 0)=0
+                      AND small_package_code=%s
+                    LIMIT 1
+                    """,
+                    (master_order_code, scanned_code),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT child_order_code, packing_session_id
+                    FROM wholesale_box_items
+                    WHERE master_order_code=%s
+                      AND is_deleted=0
+                      AND (child_order_code=%s OR box_code=%s)
+                    LIMIT 1
+                    """,
+                    (master_order_code, scanned_code, scanned_code),
+                )
             row = cur.fetchone()
             result = "OK" if row else "WRONG_BOX"
             message = "Kien dung trong don si" if row else "Kien khong thuoc don si"

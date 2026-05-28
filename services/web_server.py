@@ -2,6 +2,7 @@ import os
 import threading
 from functools import wraps
 from flask import Flask, request, Response, send_from_directory, redirect, session, render_template_string
+from routes.report_routes import create_report_blueprint
 
 
 _web_thread = None
@@ -60,6 +61,8 @@ def start_web_server(folder: str, port: int = 18080, username="admin", password=
                 return fn(*args, **kwargs)
             return redirect("/login")
         return wrapper
+
+    app.register_blueprint(create_report_blueprint(login_required))
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
