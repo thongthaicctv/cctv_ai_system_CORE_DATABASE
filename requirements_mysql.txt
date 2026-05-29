@@ -7,3 +7,7 @@ Pillow
 openpyxl
 requests
 zxing-cpp
+cryptography
+psutil
+python-vlc
+PyNaCl

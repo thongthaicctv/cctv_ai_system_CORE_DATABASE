@@ -23,7 +23,9 @@ DEFAULT_DB_CONFIG = {
     "user": "atg_app",
     "password": "atg_password",
     "charset": "utf8mb4",
-    "connect_timeout": 5,
+    "connect_timeout": 2,
+    "read_timeout": 3,
+    "write_timeout": 3,
 }
 
 
@@ -50,6 +52,8 @@ class MySQLClient:
             database=self.config.get("database", "atg_order_system"),
             charset=self.config.get("charset", "utf8mb4"),
             connect_timeout=int(self.config.get("connect_timeout", 5)),
+            read_timeout=int(self.config.get("read_timeout", 3)),
+            write_timeout=int(self.config.get("write_timeout", 3)),
             autocommit=False,
             cursorclass=DictCursor,
         )

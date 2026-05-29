@@ -271,6 +271,27 @@ class QRWorker:
     def _default_record_targets(self):
         return self._target_camera_ids(self._default_record_scan_camera_id())
 
+    def _safe_active_packing_session(self, scanner_id, context=""):
+        try:
+            return self.packing_service.db.get_active_packing_session(scanner_id)
+        except Exception as exc:
+            self._packing_log(
+                f"[MYSQL WARNING] get_active_packing_session failed"
+                f"{' in ' + context if context else ''}, continue record flow: {exc}"
+            )
+            return None
+
+    def _wait_next_handover_order(self, scanner_id):
+        self.packing_action_state[scanner_id] = {
+            "mode": "handover_wait_delivery_order"
+        }
+
+    def _has_active_handover_flow(self, scanner_id):
+        return (
+            scanner_id in self.packing_service.pending_handover
+            or scanner_id in self.packing_service.active_handover_record
+        )
+
     def _handle_raw_business_scan(self, scan_cam_id, text):
         """
         Xử lý mã quét không có prefix sau các lệnh nghiệp vụ cố định.
@@ -288,7 +309,39 @@ class QRWorker:
         if not scanner_id:
             return False
 
+        body_lower = body.lower()
         state_action = self.packing_action_state.get(scanner_id)
+
+        if body_lower.startswith("stop"):
+            employee_id, employee_name = self._employee_info_for_scanner(scan_cam_id)
+            active_packing = self._safe_active_packing_session(
+                scanner_id,
+                context="raw_stop",
+            )
+            if active_packing:
+                self.packing_service.stop_packing(
+                    scanner_id=scanner_id,
+                    employee_code=employee_id,
+                    employee_name=employee_name,
+                )
+                self.packing_action_state.pop(scanner_id, None)
+                return True
+
+            if self._has_active_handover_flow(scanner_id):
+                self.packing_service.finish_handover(
+                    scanner_id=scanner_id,
+                    delivery_employee_code=employee_id,
+                    delivery_employee_name=employee_name,
+                )
+                self.packing_action_state.pop(scanner_id, None)
+                return True
+
+            if state_action:
+                self.packing_action_state.pop(scanner_id, None)
+                stop_ok()
+                return True
+
+            return False
 
         if state_action and state_action.get("mode") == "packing_wait_master_order":
             employee_id, employee_name = self._employee_info_for_scanner(scan_cam_id)
@@ -341,7 +394,7 @@ class QRWorker:
                 )
                 self._packing_sound("prompt_scan_delivery_box")
             else:
-                self.packing_action_state.pop(scanner_id, None)
+                self._wait_next_handover_order(scanner_id)
 
             return True
 
@@ -350,7 +403,7 @@ class QRWorker:
                 scanner_id=scanner_id,
                 packing_order_code=body,
             )
-            self.packing_action_state.pop(scanner_id, None)
+            self._wait_next_handover_order(scanner_id)
             return True
 
         if scanner_id in self.packing_service.pending_handover:
@@ -358,9 +411,14 @@ class QRWorker:
                 scanner_id=scanner_id,
                 packing_order_code=body,
             )
+            if scanner_id in self.packing_service.active_handover_record:
+                self._wait_next_handover_order(scanner_id)
             return True
 
-        active_packing = self.packing_service.db.get_active_packing_session(scanner_id)
+        active_packing = self._safe_active_packing_session(
+            scanner_id,
+            context="raw_scan",
+        )
         if active_packing:
             self.packing_service.add_packing_item(
                 scanner_id=scanner_id,
@@ -944,6 +1002,53 @@ class QRWorker:
             # 0.3. Nếu đang ở chế độ chờ mã thùng lớn sau QR DONG
             state_action = self.packing_action_state.get(scanner_id)
 
+            # STOP is a control command and must win over handover state.
+            # Example: s03stop must finish the s03 session, not deliver order "stop".
+            if body_lower.startswith("stop"):
+                active_packing = self._safe_active_packing_session(
+                    scanner_id,
+                    context="prefixed_stop",
+                )
+
+                if active_packing:
+                    employee_id, employee_name = self._employee_info_for_scanner(scan_cam_id)
+
+                    self.packing_service.stop_packing(
+                        scanner_id=scanner_id,
+                        employee_code=employee_id,
+                        employee_name=employee_name,
+                    )
+                    self.packing_action_state.pop(scanner_id, None)
+                    return
+
+                if self._has_active_handover_flow(scanner_id):
+                    employee_id, employee_name = self._employee_info_for_scanner(scan_cam_id)
+
+                    self.packing_service.finish_handover(
+                        scanner_id=scanner_id,
+                        delivery_employee_code=employee_id,
+                        delivery_employee_name=employee_name,
+                    )
+                    self.packing_action_state.pop(scanner_id, None)
+                    return
+
+                if state_action:
+                    self.packing_action_state.pop(scanner_id, None)
+                    stop_ok()
+                    print("CMD STOP MODE", scanner_id)
+                    return
+
+                target_ids = self._target_camera_ids(scan_cam_id)
+
+                for target_id in target_ids:
+                    st = self.state.get(target_id)
+                    self._save_mysql_ecom_video_before_stop(scanner_id, target_id, st)
+                    self.state.stop_record(target_id, clear_employee=False)
+
+                stop_ok()
+                print("CMD STOP", target_ids)
+                return
+
             if state_action and state_action.get("mode") == "packing_wait_master_order":
                 master_order_code = body.strip()
 
@@ -1018,8 +1123,8 @@ class QRWorker:
 
                     self._packing_sound("prompt_scan_delivery_box")
                 else:
-                    # Đơn chưa đóng / đã giao / lỗi khác thì thoát chế độ giao
-                    self.packing_action_state.pop(scanner_id, None)
+                    # Đơn lỗi vẫn giữ chế độ giao để người dùng quét đơn tiếp theo.
+                    self._wait_next_handover_order(scanner_id)
 
                 return
 
@@ -1040,9 +1145,9 @@ class QRWorker:
                     packing_order_code=packing_order_code
                 )
 
-                # Sau khi xác nhận đúng/sai xong thì thoát chế độ,
-                # muốn giao đơn tiếp theo thì quét lại QR GIAO.
-                self.packing_action_state.pop(scanner_id, None)
+                # Sau khi xác nhận đúng/sai xong thì quay lại chờ quét đơn tiếp theo.
+                # Chỉ sXXstop mới kết thúc phiên giao và dừng record.
+                self._wait_next_handover_order(scanner_id)
                 return
 
             # =========================================================
@@ -1090,6 +1195,8 @@ class QRWorker:
                 )
 
                 if confirm_result is not None:
+                    if scanner_id in self.packing_service.active_handover_record:
+                        self._wait_next_handover_order(scanner_id)
                     return
 
                 employee_id, employee_name = self._employee_info_for_scanner(scan_cam_id)
@@ -1107,7 +1214,10 @@ class QRWorker:
             # Nếu không có phiên đóng hàng thì chạy logic stop record cũ.
             if body_lower.startswith("stop"):
                 # 1. Nếu scanner đang có phiên đóng hàng thì stop đóng hàng
-                active_packing = self.packing_service.db.get_active_packing_session(scanner_id)
+                active_packing = self._safe_active_packing_session(
+                    scanner_id,
+                    context="prefixed_stop",
+                )
 
                 if active_packing:
                     employee_id, employee_name = self._employee_info_for_scanner(scan_cam_id)
@@ -1118,8 +1228,8 @@ class QRWorker:
                         employee_name=employee_name,
                     )
                     return
-                # 2. Nếu scanner đang có phiên giao hàng pending thì stop giao hàng
-                if scanner_id in self.packing_service.pending_handover:
+                # 2. Nếu scanner đang có phiên giao hàng thì stop toàn bộ phiên giao
+                if self._has_active_handover_flow(scanner_id):
                     employee_id, employee_name = self._employee_info_for_scanner(scan_cam_id)
 
                     self.packing_service.finish_handover(
@@ -1127,6 +1237,7 @@ class QRWorker:
                         delivery_employee_code=employee_id,
                         delivery_employee_name=employee_name,
                     )
+                    self.packing_action_state.pop(scanner_id, None)
                     return
 
                 # 3. Nếu không thuộc nghiệp vụ đóng/giao thì chạy stop record cũ
@@ -1173,7 +1284,10 @@ class QRWorker:
             # 5. Mã nhỏ aaa/bbb/cccc:
             # Nếu scanner đang có phiên đóng hàng thì chỉ lưu database,
             # KHÔNG start record mới.
-            active_packing = self.packing_service.db.get_active_packing_session(scanner_id)
+            active_packing = self._safe_active_packing_session(
+                scanner_id,
+                context="prefixed_scan",
+            )
 
             if active_packing:
                 self.packing_service.add_packing_item(
@@ -1202,6 +1316,13 @@ class QRWorker:
         action = command["action"]
         if action == "stop":
             scanner_id = DEFAULT_RECORD_SCANNER_ID
+            if self._has_active_handover_flow(scanner_id):
+                self.packing_service.finish_handover(scanner_id=scanner_id)
+                self.packing_action_state.pop(scanner_id, None)
+                stop_ok()
+                print("CMD DEFAULT HANDOVER STOP", DEFAULT_RECORD_SCANNER_ID)
+                return
+
             target_ids = self._default_record_targets()
             for target_id in target_ids:
                 st = self.state.get(target_id)

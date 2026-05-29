@@ -2,6 +2,10 @@ Chi tiết các bạn vào kênh youtube theo đường dẫn dưới để xem 
 
 https://www.youtube.com/playlist?list=PLwJIqstNBJGnfHiQblP5g1YJKcwlMp8HV
 
+tên thư mục và đường dẫn nên để: 
+    - lưu video: D:\VIDEO
+    - cài đặt database: D:\ATG_DataBackup
+
 
 I. cài đặt luồng dữ liệu hình ảnh RTSP: 
     - MAIN: là luồng tín hiệu chính sử dụng cho việc ghi hình 

@@ -146,7 +146,10 @@ class StoragePage(QWidget):
 
     def _build_mapping_table(self, mapping):
         cameras = self.cameras
-        labels = [cam.get("name", cam.get("id", "")) for cam in cameras]
+        labels = [
+            self._camera_matrix_label(cam)
+            for cam in cameras
+        ]
 
         self.mapping_table.clear()
         self.mapping_table.setRowCount(len(cameras))
@@ -166,6 +169,15 @@ class StoragePage(QWidget):
                     Qt.Checked if record_id in target_ids else Qt.Unchecked
                 )
                 self.mapping_table.setItem(row, col, item)
+
+    def _camera_matrix_label(self, cam):
+        cam_id = str(cam.get("id", "")).strip()
+        name = str(cam.get("name", cam_id)).strip() or cam_id
+        try:
+            scanner_id = f"s{int(cam_id):02d}"
+        except ValueError:
+            scanner_id = f"s{cam_id}"
+        return f"{scanner_id} / ID {cam_id} - {name}"
 
     def _read_mapping(self):
         mapping = {}

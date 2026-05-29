@@ -32,7 +32,9 @@ def _default_config():
             "user": "atg_app",
             "password": "atg_password",
             "charset": "utf8mb4",
-            "connect_timeout": 5,
+            "connect_timeout": 2,
+            "read_timeout": 3,
+            "write_timeout": 3,
         },
         
         

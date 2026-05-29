@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication
 
 from core.resource_paths import resource_path
 from services.audio_service import record_error
+from services.record_video_db import upsert_closed_record_video
 from system_logger import log
 from utils.url_helper import camera_record_rtsp_urls, camera_source_key
 
@@ -157,6 +158,8 @@ class RecordWorker:
         self.current_file = ""
         self.current_order = ""
         self.current_employee = ""
+        self.current_employee_name = ""
+        self.record_started_at = None
         self.record_started_mono = 0.0
         self.last_error_sound_mono = 0.0
         self.shared_source_key = None
@@ -192,6 +195,7 @@ class RecordWorker:
                     continue
             else:
                 self.current_employee = snapshot.get("employee_id", "")
+                self.current_employee_name = snapshot.get("employee_name", "")
 
             if self._auto_stop_due():
                 self._close_session("AUTO")
@@ -327,6 +331,8 @@ class RecordWorker:
             self.current_file = output_path
             self.current_order = snapshot.get("order_code", "")
             self.current_employee = snapshot.get("employee_id", "")
+            self.current_employee_name = snapshot.get("employee_name", "")
+            self.record_started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.record_started_mono = time.monotonic()
             self.shared_source_key = None
             self.shared_member_ids = [str(self.cam["id"])]
@@ -422,6 +428,8 @@ class RecordWorker:
             self.current_file = output_paths[str(self.cam["id"])]
             self.current_order = order_code
             self.current_employee = snapshot.get("employee_id", "")
+            self.current_employee_name = snapshot.get("employee_name", "")
+            self.record_started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.record_started_mono = started_mono
             self.shared_source_key = source_key
             self.shared_member_ids = [str(cam_id) for cam_id in candidate_ids]
@@ -461,6 +469,8 @@ class RecordWorker:
         self.current_file = output_path
         self.current_order = snapshot.get("order_code", "")
         self.current_employee = snapshot.get("employee_id", "")
+        self.current_employee_name = snapshot.get("employee_name", "")
+        self.record_started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.record_started_mono = float(session.get("started_mono", time.monotonic()))
         self.shared_source_key = self._shared_source_key()
         self.shared_member_ids = list(session.get("member_ids", []))
@@ -789,6 +799,7 @@ class RecordWorker:
             self._terminate_ffmpeg_process(self.ffmpeg_process)
             self.ffmpeg_process = None
 
+        self._persist_closed_video(reason)
         self._reset_session_fields()
 
     def _close_shared_session(self, reason=None):
@@ -809,6 +820,7 @@ class RecordWorker:
                 for cam_id in session.get("member_ids", []):
                     log(f"{self._camera_name(cam_id)} {status}")
 
+        self._persist_closed_video(reason)
         self._reset_session_fields()
 
         if member_ids and reason in {"STOP", "SWITCH", "AUTO", "FAIL"}:
@@ -824,6 +836,8 @@ class RecordWorker:
         self.current_file = ""
         self.current_order = ""
         self.current_employee = ""
+        self.current_employee_name = ""
+        self.record_started_at = None
         self.record_started_mono = 0.0
         self.shared_source_key = None
         self.shared_member_ids = []
@@ -871,6 +885,39 @@ class RecordWorker:
             for ch in str(value).strip()
         )
         return cleaned or "NA"
+
+    def _persist_closed_video(self, reason=None):
+        if not self.current_order or not self.current_file:
+            return
+        if reason == "FAIL":
+            return
+
+        try:
+            duration_seconds = 0
+            if self.record_started_mono:
+                duration_seconds = max(0, time.monotonic() - self.record_started_mono)
+
+            video_id = upsert_closed_record_video(
+                order_code=self.current_order,
+                file_path=self.current_file,
+                camera_id=str(self.cam.get("id", "")),
+                camera_name=str(self.cam.get("name", self.cam.get("id", ""))),
+                employee_code=self.current_employee,
+                employee_name=self.current_employee_name,
+                start_time=self.record_started_at,
+                end_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                duration_seconds=duration_seconds,
+                result="auto_stop" if reason == "AUTO" else "done",
+            )
+            log(
+                f"[MYSQL VIDEO UPSERT] camera={self.cam.get('id')} "
+                f"order={self.current_order} video_id={video_id} file={self.current_file}"
+            )
+        except Exception as exc:
+            log(
+                f"[MYSQL VIDEO UPSERT ERROR] camera={self.cam.get('id')} "
+                f"order={self.current_order} file={self.current_file} error={exc}"
+            )
 
     def _stop_group_states(self, clear_employee=False):
         member_ids = self.shared_member_ids or [str(self.cam["id"])]

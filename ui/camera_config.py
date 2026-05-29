@@ -291,6 +291,7 @@ class DatabaseConfigDialog(QDialog):
 
     def install_database(self):
         schema_path = resource_path("db", "mysql_schema_atg_order_system.sql")
+        user_path = resource_path("db", "create_mysql_user.sql")
         if not os.path.exists(schema_path):
             QMessageBox.warning(self, "Thiếu schema", f"Không tìm thấy file:\n{schema_path}")
             return
@@ -298,13 +299,17 @@ class DatabaseConfigDialog(QDialog):
         if QMessageBox.question(
             self,
             "Cài database",
-            "Chạy schema để tạo/cập nhật database atg_order_system?",
+            "Chạy schema và tạo lại tài khoản atg_app bằng mysql_native_password?",
         ) != QMessageBox.Yes:
             return
 
         try:
-            with open(schema_path, "r", encoding="utf-8") as f:
-                statements = self._sql_statements(f.read())
+            statements = []
+            for sql_path in (schema_path, user_path):
+                if not os.path.exists(sql_path):
+                    continue
+                with open(sql_path, "r", encoding="utf-8") as f:
+                    statements.extend(self._sql_statements(f.read()))
 
             with self._connect(with_database=False) as conn:
                 with conn.cursor() as cur:
@@ -312,7 +317,9 @@ class DatabaseConfigDialog(QDialog):
                         cur.execute(statement)
 
             self._set_status(
-                f"Cài database OK. Đã chạy {len(statements)} câu SQL từ schema.",
+                "Cài database OK. Đã chạy "
+                f"{len(statements)} câu SQL và tạo lại user atg_app.\n"
+                "Bây giờ đổi Tài khoản=atg_app, Mật khẩu=atg_password rồi bấm Test kết nối.",
                 ok=True,
             )
         except ModuleNotFoundError:
