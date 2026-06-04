@@ -25,6 +25,7 @@ from PySide6.QtGui import QIcon
 
 from core.gpu_acceleration import configure_opencv_acceleration, prepare_gpu_runtime
 from license.license_manager import LicenseManager
+from services.cleanup_service import cleanup_index_and_video_sync
 from system_logger import log
 
 # =========================
@@ -90,7 +91,14 @@ def main():
     print("STORAGE =", storage_path)
     print("WEB INDEX URL =", cfg.get("web_index_url", "http://127.0.0.1:8088/"))
 
-
+    try:
+        cleanup_index_and_video_sync(
+            storage_path,
+            cfg.get("keep_index_days", 240),
+            bool(cfg.get("cleanup_enabled", False)),
+        )
+    except Exception as exc:
+        log(f"[CLEANUP ERROR] Khong the don video cu: {exc}")
    
 
     # =========================

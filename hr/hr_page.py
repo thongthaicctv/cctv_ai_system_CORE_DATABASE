@@ -924,6 +924,7 @@ class _VideoTab(QWidget):
         self._config = load_config()
         self._storage = self._config.get("storage_path", "records")
         self._videos: list = []
+        self._video_stats: dict = {}
         self._build()
         self._load()
 
@@ -1149,9 +1150,11 @@ class _VideoTab(QWidget):
 
     def _load(self):
         try:
+            self._video_stats = self._query_video_stats_from_database()
             self._videos = self._query_videos_from_database()
         except Exception as exc:
             self._videos = []
+            self._video_stats = {}
             QMessageBox.warning(
                 self,
                 "Không đọc được database",
@@ -1160,6 +1163,37 @@ class _VideoTab(QWidget):
         self._update_stats()
         self._update_cam_filter()
         self._fill(self._videos)
+
+    def _query_video_stats_from_database(self):
+        from services.mysql_client import MySQLClient
+
+        db = MySQLClient()
+        with db.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    COALESCE(SUM(COALESCE(file_size, 0)), 0) / 1024 / 1024 AS size_mb,
+                    COUNT(DISTINCT NULLIF(TRIM(CAST(camera_id AS CHAR)), '')) AS camera_count,
+                    COUNT(DISTINCT
+                        CASE
+                            WHEN employee_code IS NULL THEN NULL
+                            WHEN TRIM(employee_code) = '' THEN NULL
+                            WHEN UPPER(TRIM(employee_code)) = 'NOEMP' THEN NULL
+                            ELSE TRIM(employee_code)
+                        END
+                    ) AS employee_count
+                FROM packing_videos
+                """
+            )
+            row = cur.fetchone() or {}
+
+        return {
+            "total": int(row.get("total") or 0),
+            "size_mb": float(row.get("size_mb") or 0),
+            "camera_count": int(row.get("camera_count") or 0),
+            "employee_count": int(row.get("employee_count") or 0),
+        }
 
     def _query_videos_from_database(self, limit: int = 1000):
         from services.mysql_client import MySQLClient
@@ -1208,10 +1242,16 @@ class _VideoTab(QWidget):
         return videos
 
     def _update_stats(self):
-        total = len(self._videos)
-        size  = sum(v.get("file_size_mb") or v.get("size_mb", 0) for v in self._videos)
-        cams  = len(set(v.get("camera_id", "") for v in self._videos))
-        emps  = len(set(v.get("employee_id", "") for v in self._videos if v.get("employee_id") not in ("NOEMP", "", None)))
+        if self._video_stats:
+            total = self._video_stats.get("total", 0)
+            size = self._video_stats.get("size_mb", 0)
+            cams = self._video_stats.get("camera_count", 0)
+            emps = self._video_stats.get("employee_count", 0)
+        else:
+            total = len(self._videos)
+            size  = sum(v.get("file_size_mb") or v.get("size_mb", 0) for v in self._videos)
+            cams  = len(set(v.get("camera_id", "") for v in self._videos))
+            emps  = len(set(v.get("employee_id", "") for v in self._videos if v.get("employee_id") not in ("NOEMP", "", None)))
         self.c_total.set_value(total)
         self.c_size.set_value(f"{size:.1f} MB")
         self.c_cams.set_value(cams)

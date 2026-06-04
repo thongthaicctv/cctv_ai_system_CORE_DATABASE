@@ -1,5 +1,6 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -88,6 +89,29 @@ class StoragePage(QWidget):
 
         layout.addLayout(row)
 
+        cleanup_row = QHBoxLayout()
+        cleanup_row.setSpacing(12)
+
+        self.chk_cleanup = QCheckBox("Xoá video cũ theo ngày")
+        cleanup_row.addWidget(self.chk_cleanup)
+
+        cleanup_row.addWidget(QLabel("Giữ lại:"))
+
+        self.spin_keep_days = QSpinBox()
+        self.spin_keep_days.setRange(1, 3650)
+        self.spin_keep_days.setValue(240)
+        self.spin_keep_days.setSuffix(" ngày")
+        self.spin_keep_days.setFixedWidth(130)
+        cleanup_row.addWidget(self.spin_keep_days)
+
+        cleanup_note = QLabel(
+            "Chỉ xoá thư mục video dạng YYYY-MM-DD cũ hơn số ngày giữ lại."
+        )
+        cleanup_note.setStyleSheet("color:#9ca3af;font-size:12px;")
+        cleanup_row.addWidget(cleanup_note, 1)
+
+        layout.addLayout(cleanup_row)
+
        
 
         
@@ -142,6 +166,12 @@ class StoragePage(QWidget):
 
         self.spin_stop.setValue(data.get("record_auto_stop_seconds", 300))
         self.txt_path.setText(data.get("storage_path", "videos"))
+        self.chk_cleanup.setChecked(bool(data.get("cleanup_enabled", False)))
+        try:
+            keep_days = int(data.get("keep_index_days", 240) or 240)
+        except Exception:
+            keep_days = 240
+        self.spin_keep_days.setValue(keep_days)
         self._build_mapping_table(data.get("record_mapping", {}))
 
     def _build_mapping_table(self, mapping):
@@ -209,6 +239,8 @@ class StoragePage(QWidget):
         data["record_auto_stop_seconds"] = self.spin_stop.value()
         data["storage_path"] = self.txt_path.text().strip()
         data["record_mapping"] = self._read_mapping()
+        data["cleanup_enabled"] = self.chk_cleanup.isChecked()
+        data["keep_index_days"] = self.spin_keep_days.value()
 
         save_config(data)
         self.settings_saved.emit(load_config())
