@@ -11,19 +11,15 @@ import webbrowser
 from datetime import datetime
 
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPixmap
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QFileDialog, QFormLayout,
     QFrame, QHBoxLayout, QHeaderView, QLabel,
     QLineEdit, QMessageBox, QPushButton, QSizePolicy,
-    QCheckBox, QSpinBox,
     QStackedWidget, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,QFormLayout,
 )
-
-from PySide6.QtWidgets import QApplication
-import requests
 
 from core.config_manager import load_config
 
@@ -32,12 +28,6 @@ from hr.employee_manager import (
     add_employee, delete_employee, get_stats,
     load_employees, search_employees, update_employee,
 )
-from hr.video_index_manager import generate_html_report, load_index
-try:
-    from hr.video_index_manager import scan_and_build_index
-except ImportError:
-    from hr.video_index_manager import build_index as scan_and_build_index
-
 # ──────────────────────────────────────
 # Màu sắc khớp theme main_window.py
 # ──────────────────────────────────────
@@ -928,31 +918,10 @@ class _HRTab(QWidget):
 # ─────────────────────────────────────────────
 # VIDEO TAB – Tra cứu video đã ghi
 # ─────────────────────────────────────────────
-class _RebuildThread(QThread):
-    done = Signal(dict)
-    error = Signal(str)
-
-    def __init__(self, path):
-        super().__init__()
-        self.path = path
-
-    def run(self):
-        try:
-            from hr.video_index_manager import update_index_incremental
-
-            idx = update_index_incremental(self.path)
-
-            self.done.emit(idx)
-        except Exception as e:
-            self.error.emit(str(e))
-
-
 class _VideoTab(QWidget):
     def __init__(self):
         super().__init__()
         self.setStyleSheet(_BASE)
-        self._thread: _RebuildThread | None = None
-        
         self._config = load_config()
         self._storage = self._config.get("storage_path", "records")
         self._videos: list = []
@@ -972,85 +941,27 @@ class _VideoTab(QWidget):
         )
         hdr.addWidget(t)
 
-        self.chk_cleanup = QCheckBox("Xoá dữ liệu cũ")
-        self.chk_cleanup.setChecked(bool(self._config.get("cleanup_enabled", False)))
-        self.chk_cleanup.setStyleSheet("""
-        QCheckBox{
-            color:#dddddd;
-            font-size:12px;
-            font-weight:600;
-            padding:4px 8px;
-        }
-        QCheckBox::indicator{
-            width:16px;
-            height:16px;
-        }
-        """)
-        self.chk_cleanup.stateChanged.connect(self._save_cleanup_config)
-
-        self.spin_keep_days = QSpinBox()
-        self.spin_keep_days.setRange(1, 3650)
-        self.spin_keep_days.setValue(int(self._config.get("keep_index_days", 180)))
-        self.spin_keep_days.setSuffix(" ngày")
-        self.spin_keep_days.setFixedWidth(105)
-        self.spin_keep_days.setStyleSheet("""
-        QSpinBox{
-            background:#1b1b1b;
-            color:#ffffff;
-            border:1px solid #2a2a2a;
-            border-radius:6px;
-            padding:5px 8px;
-        }
-        """)
-        self.spin_keep_days.valueChanged.connect(self._save_cleanup_config)
-
-        hdr.addWidget(self.chk_cleanup)
-        hdr.addWidget(self.spin_keep_days)
         hdr.addStretch()
 
 
-        self.btn_rebuild = QPushButton("🔄 Cập nhật video")
-        self.btn_rebuild.setStyleSheet(_BTN_PRIMARY)
-        self.btn_rebuild.clicked.connect(self._rebuild)
+        self.btn_reload_db = QPushButton("↻ Làm mới")
+        self.btn_reload_db.setFixedHeight(34)
+        self.btn_reload_db.setStyleSheet(_BTN_PRIMARY)
+        self.btn_reload_db.clicked.connect(self._load)
 
+        self.btn_open_video_web = QPushButton("🔎 Mở web tìm kiếm video")
+        self.btn_open_video_web.setFixedHeight(34)
+        self.btn_open_video_web.setStyleSheet(_BTN_PRIMARY)
+        self.btn_open_video_web.clicked.connect(self._open_video_search_web)
 
-        # =========================
-        # REMOTE WEB VIDEO INDEX
-        # =========================
-        self.chk_web_remote = QCheckBox("Web từ xa")
-        self.chk_web_remote.setChecked(bool(self._config.get("http_enabled", False)))
-        self.chk_web_remote.setFixedHeight(34)
-        self.chk_web_remote.setStyleSheet("""
-        QCheckBox{
-            color:#dddddd;
-            font-size:12px;
-            font-weight:700;
-            padding:4px 8px;
-        }
-        QCheckBox::indicator{
-            width:16px;
-            height:16px;
-        }
-        """)
-        self.chk_web_remote.stateChanged.connect(self._save_remote_web_config)
+        self.btn_webserver_setting = QPushButton("⚙ Cài đặt WebServer")
+        self.btn_webserver_setting.setFixedHeight(34)
+        self.btn_webserver_setting.setStyleSheet(_BTN_PRIMARY)
+        self.btn_webserver_setting.clicked.connect(self._open_webserver_setting)
 
-        self.btn_copy_remote = QPushButton("📋 Copy link")
-        self.btn_copy_remote.setFixedHeight(34)
-        self.btn_copy_remote.setStyleSheet(_BTN_PRIMARY)
-        self.btn_copy_remote.clicked.connect(self._copy_remote_url)
-
-        self.btn_remote_setting = QPushButton("⚙ Cài đặt")
-        self.btn_remote_setting.setFixedHeight(34)
-        self.btn_remote_setting.setStyleSheet(_BTN_PRIMARY)
-        self.btn_remote_setting.clicked.connect(self._open_remote_setting)
-
-
-        for b in [self.btn_rebuild]:
-            hdr.addWidget(b)
-        
-        hdr.addWidget(self.chk_web_remote)
-        hdr.addWidget(self.btn_copy_remote)
-        hdr.addWidget(self.btn_remote_setting)
+        hdr.addWidget(self.btn_reload_db)
+        hdr.addWidget(self.btn_open_video_web)
+        hdr.addWidget(self.btn_webserver_setting)
 
 
 
@@ -1059,7 +970,7 @@ class _VideoTab(QWidget):
         lo.addLayout(hdr)
 
         # Info
-        self.lbl_path = QLabel(f"📂 {self._storage}")
+        self.lbl_path = QLabel("🗄 Nguồn dữ liệu: MySQL/MariaDB - bảng packing_videos")
         self.lbl_path.setStyleSheet(
             f"color:{_MUTED};font-size:11px;background:transparent;border:none;"
         )
@@ -1174,70 +1085,26 @@ class _VideoTab(QWidget):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         lo.addWidget(self.table)
 
-    def _save_cleanup_config(self):
+    def _local_web_url(self):
+        url = str(self._config.get("web_index_url", "http://127.0.0.1:8088/")).strip()
+        return url or "http://127.0.0.1:8088/"
+
+    def _open_video_search_web(self):
+        webbrowser.open(self._local_web_url())
+
+    def _open_webserver_setting(self):
         from core.config_manager import save_config
-
-        self._config["cleanup_enabled"] = self.chk_cleanup.isChecked()
-        self._config["keep_index_days"] = self.spin_keep_days.value()
-
-        save_config(self._config)
-
-        print(
-            "[CONFIG] cleanup_enabled =",
-            self._config["cleanup_enabled"],
-            "| keep_index_days =",
-            self._config["keep_index_days"]
-        )
-
-
-    def _remote_url(self):
-        domain = self._config.get("ddns_domain", "").strip()
-        port = int(self._config.get("http_port", 18080))
-
-        if not domain:
-            domain = "WAN_IP"
-
-        return f"http://{domain}:{port}/index.html"
-
-
-    def _save_remote_web_config(self):
-        from core.config_manager import save_config
-
-        self._config["http_enabled"] = self.chk_web_remote.isChecked()
-        save_config(self._config)
-
-        QMessageBox.information(
-            self,
-            "Web từ xa",
-            "Đã lưu cấu hình WebServer.\nKhởi động lại phần mềm để áp dụng."
-        )
-
-
-    def _copy_remote_url(self):
-        QApplication.clipboard().setText(self._remote_url())
-
-        QMessageBox.information(
-            self,
-            "Copy link",
-            f"Đã copy:\n{self._remote_url()}"
-        )
-
-
-    def _open_remote_setting(self):
-        from core.config_manager import save_config
-        import socket
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("Cài đặt Web Video Index từ xa")
-        dlg.setFixedSize(760, 380)
-        
+        dlg.setWindowTitle("Cài đặt đường dẫn WebServer")
+        dlg.setFixedSize(680, 240)
         dlg.setStyleSheet(_BASE)
 
         lo = QVBoxLayout(dlg)
         lo.setContentsMargins(22, 18, 22, 18)
         lo.setSpacing(12)
 
-        title = QLabel("🌐 Cài đặt truy cập từ xa")
+        title = QLabel("🌐 Đường dẫn WebServer tìm kiếm video độc lập")
         title.setStyleSheet(
             "font-size:16px;font-weight:700;color:white;"
             "border:none;background:transparent;"
@@ -1245,172 +1112,48 @@ class _VideoTab(QWidget):
         lo.addWidget(title)
 
         form = QFormLayout()
-        form.setSpacing(12)
-        form.setLabelAlignment(Qt.AlignRight)
-        form.setFormAlignment(Qt.AlignTop)
-        form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-
-        # tăng khoảng cách label/input
         form.setHorizontalSpacing(18)
         form.setVerticalSpacing(14)
+        form.setLabelAlignment(Qt.AlignRight)
+        form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
 
-        
+        txt_url = QLineEdit()
+        txt_url.setText(self._local_web_url())
+        txt_url.setPlaceholderText("VD: http://127.0.0.1:8088/")
+        txt_url.setMinimumHeight(34)
 
-        txt_domain = QLineEdit()
-        txt_domain.setPlaceholderText("VD: mycctv.duckdns.org hoặc WAN IP")
-        txt_domain.setText(self._config.get("ddns_domain", ""))
+        note = QLabel("WebServer chạy độc lập và tự đọc database. Phần mềm ghi hình chỉ lưu video và ghi database.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color:#888888;border:none;background:transparent;")
 
-        spin_port = QSpinBox()
-        spin_port.setRange(1000, 65535)
-        spin_port.setValue(int(self._config.get("http_port", 18080)))
-
-        txt_user = QLineEdit()
-        txt_user.setPlaceholderText("VD: admin")
-        txt_user.setText(self._config.get("http_user", "admin"))
-
-        txt_pass = QLineEdit()
-        txt_pass.setPlaceholderText("Mật khẩu Web")
-        txt_pass.setText(self._config.get("http_pass", "123456"))
-        txt_pass.setEchoMode(QLineEdit.Password)
-
-
-        # tăng độ rộng input
-        for w in [txt_domain, spin_port, txt_user, txt_pass]:
-            w.setMinimumWidth(420)
-            w.setMinimumHeight(34)
-            
-
-        lbl_url = QLabel()
-        lbl_url.setStyleSheet(
-            "color:#22c55e;font-size:13px;font-weight:700;"
-            "border:none;background:transparent;"
-        )
-
-        lbl_status = QLabel("Trạng thái: Chưa kiểm tra")
-
-        lbl_wan = QLabel("Đang tải WAN IP...")
-        lbl_wan.setStyleSheet(
-            "color:#38bdf8;font-size:12px;font-weight:700;"
-            "border:none;background:transparent;"
-        )
-
-
-        lbl_status.setStyleSheet(
-            "color:#eab308;font-size:12px;font-weight:700;"
-            "border:none;background:transparent;"
-        )
-
-        def update_url():
-            domain = txt_domain.text().strip() or "WAN_IP"
-            port = spin_port.value()
-            lbl_url.setText(f"http://{domain}:{port}/index.html")
-
-        def load_wan_ip():
-            try:
-                ip = requests.get(
-                    "https://api.ipify.org",
-                    timeout=5
-                ).text.strip()
-
-                lbl_wan.setText(ip)
-
-            except Exception:
-                lbl_wan.setText("Không lấy được WAN IP")
-
-
-
-        def check_port():
-            host = txt_domain.text().strip()
-            port = spin_port.value()
-
-            if not host:
-                QMessageBox.warning(
-                    dlg,
-                    "Thiếu địa chỉ",
-                    "Vui lòng nhập WAN IP hoặc tên miền DDNS."
-                )
-                return
-
-            try:
-                s = socket.create_connection((host, port), timeout=3)
-                s.close()
-
-                lbl_status.setText(f"Trạng thái: ✅ Port {port} đang mở")
-                lbl_status.setStyleSheet(
-                    "color:#22c55e;font-size:12px;font-weight:700;"
-                    "border:none;background:transparent;"
-                )
-
-            except Exception:
-                lbl_status.setText(f"Trạng thái: ❌ Không kết nối được port {port}")
-                lbl_status.setStyleSheet(
-                    "color:#ef4444;font-size:12px;font-weight:700;"
-                    "border:none;background:transparent;"
-                )
-
-        txt_domain.textChanged.connect(update_url)
-        spin_port.valueChanged.connect(update_url)
-        update_url()
-        load_wan_ip()
-
-        form.addRow("WAN/DDNS:", txt_domain)
-        form.addRow("WAN hiện tại:", lbl_wan)
-        form.addRow("Port Web:", spin_port)
-
-
-        form.addRow("Tài khoản:", txt_user)
-        form.addRow("Mật khẩu:", txt_pass)
-
-
-        form.addRow("Link truy cập:", lbl_url)
-        form.addRow("Check port:", lbl_status)
-
+        form.addRow("Đường dẫn:", txt_url)
+        form.addRow("Ghi chú:", note)
         lo.addLayout(form)
 
         btns = QHBoxLayout()
-
-        btn_check = QPushButton("🔎 Check port")
-        btn_copy = QPushButton("📋 Copy link")
+        btn_open = QPushButton("🔎 Mở web")
         btn_save = QPushButton("💾 Lưu")
         btn_close = QPushButton("Đóng")
-
-        btn_check.setStyleSheet(_BTN_PRIMARY)
+        btn_open.setStyleSheet(_BTN_PRIMARY)
         btn_save.setStyleSheet(_BTN_PRIMARY)
 
-        def copy_url():
-            QApplication.clipboard().setText(lbl_url.text())
-            QMessageBox.information(dlg, "Copy", "Đã copy link truy cập.")
+        def open_web():
+            webbrowser.open(txt_url.text().strip() or "http://127.0.0.1:8088/")
 
         def save_setting():
-            self._config["ddns_domain"] = txt_domain.text().strip()
-            self._config["http_port"] = spin_port.value()
-            self._config["http_enabled"] = self.chk_web_remote.isChecked()
-
-
-            self._config["http_user"] = txt_user.text().strip()
-            self._config["http_pass"] = txt_pass.text().strip()
-
+            self._config["web_index_url"] = txt_url.text().strip() or "http://127.0.0.1:8088/"
             save_config(self._config)
-
-            QMessageBox.information(
-                dlg,
-                "Đã lưu",
-                "Đã lưu cấu hình.\nKhởi động lại phần mềm để áp dụng WebServer."
-            )
-
+            QMessageBox.information(dlg, "Đã lưu", "Đã lưu đường dẫn WebServer độc lập.")
             dlg.accept()
 
-        btn_check.clicked.connect(check_port)
-        btn_copy.clicked.connect(copy_url)
+        btn_open.clicked.connect(open_web)
         btn_save.clicked.connect(save_setting)
         btn_close.clicked.connect(dlg.reject)
 
-        btns.addWidget(btn_check)
-        btns.addWidget(btn_copy)
+        btns.addWidget(btn_open)
         btns.addStretch()
         btns.addWidget(btn_save)
         btns.addWidget(btn_close)
-
         lo.addLayout(btns)
 
         dlg.exec()
@@ -1455,118 +1198,14 @@ class _VideoTab(QWidget):
 
         return from_date, to_date
     
+    # Data
     def _export_report_all(self):
         from_date, to_date = self._validate_report_dates()
         if not from_date:
             return
-
-        default_name = f"bao_cao_{from_date}_den_{to_date}.xlsx"
-
-        save_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Lưu báo cáo",
-            default_name,
-            "Excel File (*.xlsx)"
-        )
-
-        if not save_path:
-            return
-
-        if not save_path.lower().endswith(".xlsx"):
-            save_path = f"{save_path}.xlsx"
-
-        try:
-            export_all_reports_excel(from_date, to_date, save_path)
-        except Exception as exc:
-            QMessageBox.critical(
-                self,
-                "Xuáº¥t bÃ¡o cÃ¡o tháº¥t báº¡i",
-                f"KhÃ´ng thá»ƒ xuáº¥t bÃ¡o cÃ¡o Excel.\n\n{exc}\n\n{save_path}"
-            )
-            print(traceback.format_exc())
-            return
-
-        QMessageBox.information(
-            self,
-            "Xuất báo cáo",
-            f"Đã xuất báo cáo gồm 2 sheet:\n"
-            f"1. Báo cáo tổng hợp\n"
-            f"2. Báo cáo nhân viên\n\n"
-            f"{save_path}"
-        )
-
-
-    def _export_handover_report(self):
-        from_date, to_date = self._validate_report_dates()
-        if not from_date:
-            return
-
-        default_name = f"bao_cao_giao_hang_{from_date}_den_{to_date}.xlsx"
-
-        save_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Lưu báo cáo giao hàng",
-            default_name,
-            "Excel File (*.xlsx)"
-        )
-
-        if not save_path:
-            return
-
-        if not save_path.lower().endswith(".xlsx"):
-            save_path = f"{save_path}.xlsx"
-
-        try:
-            export_handover_excel(from_date, to_date, save_path)
-        except Exception as exc:
-            QMessageBox.critical(
-                self,
-                "Xuáº¥t bÃ¡o cÃ¡o giao hÃ ng tháº¥t báº¡i",
-                f"KhÃ´ng thá»ƒ xuáº¥t bÃ¡o cÃ¡o giao hÃ ng.\n\n{exc}\n\n{save_path}"
-            )
-            print(traceback.format_exc())
-            return
-
-        QMessageBox.information(
-            self,
-            "Xuất báo cáo giao hàng",
-            f"Đã xuất báo cáo giao hàng:\n\n{save_path}"
-        )
-
-        def _export_handover_report(self):
-            from_date, to_date = self._validate_report_dates()
-            if not from_date:
-                return
-
-            default_name = f"bao_cao_giao_hang_{from_date}_den_{to_date}.xlsx"
-
-            save_path, _ = QFileDialog.getSaveFileName(
-                self,
-                "Lưu báo cáo giao hàng",
-                default_name,
-                "Excel File (*.xlsx)"
-            )
-
-            if not save_path:
-                return
-
-            export_handover_excel(from_date, to_date, save_path)
-
-            QMessageBox.information(
-                self,
-                "Xuất báo cáo giao hàng",
-                f"Đã xuất báo cáo giao hàng:\n\n{save_path}"
-            )
-                
-            
-    # ── Data ──────────────────────────────────
-    def _export_report_all(self):
-        from_date, to_date = self._validate_report_dates()
-        if not from_date:
-            return
-        port = int(self._config.get("http_port", 18080))
+        base_url = self._local_web_url().rstrip("/")
         url = (
-            f"http://127.0.0.1:{port}/reports/order-status.xlsx"
+            f"{base_url}/reports/order-status.xlsx"
             f"?from_date={from_date}&to_date={to_date}"
         )
         webbrowser.open(url)
@@ -1575,19 +1214,72 @@ class _VideoTab(QWidget):
         from_date, to_date = self._validate_report_dates()
         if not from_date:
             return
-        port = int(self._config.get("http_port", 18080))
+        base_url = self._local_web_url().rstrip("/")
         url = (
-            f"http://127.0.0.1:{port}/reports/order-status.xlsx"
+            f"{base_url}/reports/order-status.xlsx"
             f"?from_date={from_date}&to_date={to_date}"
         )
         webbrowser.open(url)
 
     def _load(self):
-        idx = load_index(self._storage)
-        self._videos = idx.get("videos", [])
+        try:
+            self._videos = self._query_videos_from_database()
+        except Exception as exc:
+            self._videos = []
+            QMessageBox.warning(
+                self,
+                "Không đọc được database",
+                f"Không thể tải danh sách video từ MySQL/MariaDB.\n\n{exc}"
+            )
         self._update_stats()
         self._update_cam_filter()
         self._fill(self._videos)
+
+    def _query_videos_from_database(self, limit: int = 1000):
+        from services.mysql_client import MySQLClient
+
+        db = MySQLClient()
+        with db.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    pv.id,
+                    pv.order_code,
+                    pv.camera_id,
+                    pv.camera_name,
+                    pv.employee_code AS employee_id,
+                    COALESCE(e.employee_name, pv.employee_name) AS employee_name,
+                    e.department,
+                    pv.file_name,
+                    pv.file_path,
+                    DATE(pv.created_at) AS date,
+                    TIME(pv.created_at) AS time,
+                    pv.start_time,
+                    pv.end_time,
+                    pv.duration_seconds AS duration_sec,
+                    pv.file_size / 1024 / 1024 AS file_size_mb,
+                    pv.result,
+                    pv.created_at
+                FROM packing_videos pv
+                LEFT JOIN employees e ON e.employee_code = pv.employee_code
+                ORDER BY pv.created_at DESC, pv.id DESC
+                LIMIT %s
+                """,
+                (int(limit),),
+            )
+            rows = list(cur.fetchall())
+
+        videos = []
+        for row in rows:
+            item = dict(row)
+            for key in ("date", "time", "start_time", "end_time", "created_at"):
+                if item.get(key) is not None:
+                    item[key] = str(item[key])
+            size = float(item.get("file_size_mb") or 0)
+            item["file_size_mb"] = round(size, 2)
+            item["filename"] = item.get("file_name") or os.path.basename(str(item.get("file_path") or ""))
+            videos.append(item)
+        return videos
 
     def _update_stats(self):
         total = len(self._videos)
@@ -1659,7 +1351,10 @@ class _VideoTab(QWidget):
 
             # ── Actions: full path tuyệt đối ──
             rel = v.get("file_path") or v.get("path") or v.get("filename", "")
-            full_path = os.path.normpath(os.path.join(self._storage, rel))
+            if os.path.isabs(str(rel)):
+                full_path = os.path.normpath(str(rel))
+            else:
+                full_path = os.path.normpath(os.path.join(self._storage, str(rel)))
             aw = QWidget(); aw.setStyleSheet("background:transparent;")
             ahl = QHBoxLayout(aw); ahl.setContentsMargins(4, 2, 4, 2); ahl.setSpacing(4)
             b_play = QPushButton("▶")
@@ -1697,47 +1392,6 @@ class _VideoTab(QWidget):
         ]
         self._fill(res)
 
-    def _rebuild(self):
-        if self._thread and self._thread.isRunning():
-            return
-
-        self._config = load_config(force=True)
-        self._storage = self._config.get("storage_path", "records")
-        self.lbl_path.setText(f"📂 {self._storage}")
-
-        self.btn_rebuild.setEnabled(False)
-        self.btn_rebuild.setText("⏳ Đang quét...")
-        self._thread = _RebuildThread(self._storage)
-        self._thread.done.connect(self._on_rebuild_done)
-        self._thread.error.connect(self._on_rebuild_error)
-        self._thread.start()
-
-    def _on_rebuild_done(self, idx: dict):
-        self.btn_rebuild.setEnabled(True)
-        self.btn_rebuild.setText("🔄 Cập nhật index")
-        self._videos = idx.get("videos", [])
-        self._update_stats()
-        self._update_cam_filter()
-        self._fill(self._videos)
-        QMessageBox.information(
-            self, "✅ Xong",
-            f"Video mới: {idx.get('new', 0)}\n"
-            f"Tổng video: {idx.get('total', 0)}\n"
-            f"Đã tạo index.html"
-        )
-
-    def _on_rebuild_error(self, msg: str):
-        self.btn_rebuild.setEnabled(True)
-        self.btn_rebuild.setText("🔄 Cập nhật index")
-        QMessageBox.critical(self, "Lỗi", msg)
-
-    def _pick_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Chọn thư mục video", self._storage)
-        if folder:
-            self._storage = folder
-            self.lbl_path.setText(f"📂 {folder}")
-            self._load()
-
     def _play(self, path: str):
         path = os.path.normpath(path)
         if not os.path.exists(path):
@@ -1764,20 +1418,6 @@ class _VideoTab(QWidget):
             import shutil
             shutil.copy2(src, dest)
             QMessageBox.information(self, "✅ Đã lưu", f"Đã lưu tại:\n{dest}")
-
-    def _open_html(self):
-        html_path = os.path.join(self._storage, "index.html")
-        if not os.path.exists(html_path):
-            generate_html_report(self._storage)
-        try:
-            if sys.platform == "win32":
-                os.startfile(html_path)
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", html_path])
-            else:
-                subprocess.Popen(["xdg-open", html_path])
-        except Exception as e:
-            QMessageBox.critical(self, "Lỗi", str(e))
 
 
 # ─────────────────────────────────────────────

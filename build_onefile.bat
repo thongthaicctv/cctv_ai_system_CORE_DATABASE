@@ -2,12 +2,16 @@
 setlocal
 cd /d "%~dp0"
 
-if not exist ".venv\Scripts\python.exe" (
+if exist ".venv\Scripts\python.exe" (
+    set "PYTHON_BIN=.venv\Scripts\python.exe"
+) else if exist "C:\Python310\python.exe" (
     echo [INFO] Khong tim thay .venv\Scripts\python.exe
+    echo [INFO] Se dung C:\Python310\python.exe
+    set "PYTHON_BIN=C:\Python310\python.exe"
+) else (
+    echo [INFO] Khong tim thay .venv\Scripts\python.exe hoac C:\Python310\python.exe
     echo [INFO] Se dung python hien tai trong PATH
     set "PYTHON_BIN=python"
-) else (
-    set "PYTHON_BIN=.venv\Scripts\python.exe"
 )
 
 %PYTHON_BIN% -m pip install --upgrade -r requirements_mysql.txt

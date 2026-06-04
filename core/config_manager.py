@@ -38,11 +38,7 @@ def _default_config():
         },
         
         
-        "http_enabled": False,
-        "http_port": 18080,
-        "ddns_domain": "",
-        "http_user": "admin",
-        "http_pass": "123456",
+        "web_index_url": "http://127.0.0.1:8088/",
 
 
     }
@@ -50,6 +46,13 @@ def _default_config():
 def _normalize_config(data):
     merged = _default_config()
     merged.update(data or {})
+
+    web_index_url = str(merged.get("web_index_url") or "").strip()
+    if not web_index_url:
+        web_index_url = "http://127.0.0.1:8088/"
+    merged["web_index_url"] = web_index_url
+    for legacy_key in ("http_enabled", "http_port", "ddns_domain", "http_user", "http_pass"):
+        merged.pop(legacy_key, None)
 
     cameras = merged.get("cameras", [])
     camera_ids = [str(cam.get("id", "")).strip() for cam in cameras if cam.get("id")]

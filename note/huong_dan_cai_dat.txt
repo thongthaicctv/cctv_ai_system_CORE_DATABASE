@@ -31,7 +31,10 @@ I. cài đặt luồng dữ liệu hình ảnh RTSP:
 	                SUB:    rtsp://admin:Abcd1234@192.168.1.12:554/user=admin_password=pass_channel=1_stream=1.sdp
 
         6. EZVIT    :   Main    rtsp://admin:xxxxxx@192.168.1.12:554/ch1/main (xxxxxx là mã bảo mật của cam)
-                        Sub     rtsp://admin:xxxxxx@192.168.1.12:554/ch1/sub (xxxxxx là mã bảo mật của cam)    
+                        Sub     rtsp://admin:xxxxxx@192.168.1.12:554/ch1/sub (xxxxxx là mã bảo mật của cam) 
+  
+	7. Uniarch	Main	rtsp://admin:antn%402016@192.168.110.186:554/media/video1
+			Sub	rtsp://admin:antn%402016@192.168.110.186:554/media/video2 
 
 
 II. khi camera sử dụng các ký tự đặc biệt trong mật khẩu ta cần sử dụng mã hoá để cho phần mềm kết nối.

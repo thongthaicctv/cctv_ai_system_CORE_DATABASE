@@ -266,10 +266,60 @@ class QRWorker:
             return f"s{scan_cam_id}"
 
     def _default_record_scan_camera_id(self):
-        return self._find_camera_by_sub(DEFAULT_RECORD_SCANNER_ID) or "1"
+        return (
+            self._find_camera_by_sub(DEFAULT_RECORD_SCANNER_ID)
+            or self._first_available_record_camera_id()
+            or "1"
+        )
 
     def _default_record_targets(self):
         return self._target_camera_ids(self._default_record_scan_camera_id())
+
+    def _configured_camera_ids(self):
+        data = load_config()
+        return {
+            str(cam.get("id", "")).strip()
+            for cam in data.get("cameras", [])
+            if str(cam.get("id", "")).strip()
+        }
+
+    def _is_configured_scan_camera(self, scan_cam_id):
+        return str(scan_cam_id or "").strip() in self._configured_camera_ids()
+
+    def _first_available_record_camera_id(self):
+        data = load_config()
+        record_engine = self._get_record_engine()
+        worker_ids = set()
+        if record_engine is not None:
+            worker_ids = {
+                str(cam_id)
+                for cam_id in getattr(record_engine, "workers", {}).keys()
+            }
+
+        first_enabled = ""
+        for cam in data.get("cameras", []):
+            cam_id = str(cam.get("id", "")).strip()
+            if not cam_id or not cam.get("enabled", True):
+                continue
+            if not first_enabled:
+                first_enabled = cam_id
+            if not worker_ids or cam_id in worker_ids:
+                return cam_id
+
+        return first_enabled
+
+    def _unprefixed_record_context(self, scan_cam_id):
+        """
+        QR đọc trực tiếp từ camera nào thì dùng scanner/mapping của camera đó.
+        Chỉ lệnh nhập tay không prefix mới rơi về scanner mặc định s01.
+        """
+        if self._is_configured_scan_camera(scan_cam_id):
+            scan_camera_id = str(scan_cam_id).strip()
+        else:
+            scan_camera_id = self._default_record_scan_camera_id()
+
+        scanner_id = self._scanner_id_for_scan_camera(scan_camera_id)
+        return scanner_id, self._target_camera_ids(scan_camera_id)
 
     def _safe_active_packing_session(self, scanner_id, context=""):
         try:
@@ -1315,25 +1365,24 @@ class QRWorker:
         command = parse_qr_command(text)
         action = command["action"]
         if action == "stop":
-            scanner_id = DEFAULT_RECORD_SCANNER_ID
+            scanner_id, target_ids = self._unprefixed_record_context(scan_cam_id)
             if self._has_active_handover_flow(scanner_id):
                 self.packing_service.finish_handover(scanner_id=scanner_id)
                 self.packing_action_state.pop(scanner_id, None)
                 stop_ok()
-                print("CMD DEFAULT HANDOVER STOP", DEFAULT_RECORD_SCANNER_ID)
+                print("CMD DEFAULT HANDOVER STOP", scanner_id)
                 return
 
-            target_ids = self._default_record_targets()
             for target_id in target_ids:
                 st = self.state.get(target_id)
                 self._save_mysql_ecom_video_before_stop(scanner_id, target_id, st)
                 self.state.stop_record(target_id, clear_employee=False)
             stop_ok()
-            print("CMD DEFAULT STOP", DEFAULT_RECORD_SCANNER_ID, target_ids)
+            print("CMD DEFAULT STOP", scanner_id, target_ids)
             return
 
         if action == "employee":
-            target_ids = self._target_camera_ids(scan_cam_id)
+            _scanner_id, target_ids = self._unprefixed_record_context(scan_cam_id)
             for target_id in target_ids:
                 self.state.assign_employee(
                     target_id,
@@ -1351,10 +1400,10 @@ class QRWorker:
         if not order_code:
             return
 
-        target_ids = self._default_record_targets()
+        scanner_id, target_ids = self._unprefixed_record_context(scan_cam_id)
         if self._start_order_targets(target_ids, order_code):
             order_ok()
-            print("CMD DEFAULT RECORD", DEFAULT_RECORD_SCANNER_ID, target_ids, order_code)
+            print("CMD DEFAULT RECORD", scanner_id, target_ids, order_code)
 
     def _target_camera_ids(self, scan_cam_id):
         data = load_config()

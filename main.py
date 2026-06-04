@@ -8,15 +8,6 @@ from license.license_dialog import LicenseDialog
 
 from core.config_manager import load_config
 from core.resource_paths import resource_path
-from services.cleanup_service import cleanup_index_and_video_sync
-
-
-from hr.video_index_manager import update_index_incremental
-
-
-from services.web_server import start_web_server
-
-
 # =========================
 # EXE RUNTIME PATH
 # =========================
@@ -93,38 +84,11 @@ def main():
     if not app_icon.isNull():
         app.setWindowIcon(app_icon)
 
-    # =========================
-    # STARTUP VIDEO MAINTENANCE
-    # Chạy 1 lần khi khởi động app
-    # =========================
-
     cfg = load_config(force=True)
     storage_path = cfg.get("storage_path", "recordings")
 
     print("STORAGE =", storage_path)
-    print("CLEANUP ENABLED =", cfg.get("cleanup_enabled"))
-    print("KEEP INDEX DAYS =", cfg.get("keep_index_days"))
-
-    # 1. Cleanup trước
-    cleanup_index_and_video_sync(
-        storage_path=storage_path,
-        keep_days=int(cfg.get("keep_index_days", 180)),
-        enabled=bool(cfg.get("cleanup_enabled", False))
-    )
-
-    # 2. Update video mới + index.html sau khi cleanup
-    try:
-        print("[STARTUP INDEX] Updating new videos only...")
-        idx = update_index_incremental(storage_path)
-
-        print(
-            "[STARTUP INDEX] Done | "
-            f"New={idx.get('new', 0)} | "
-            f"Total={idx.get('total', 0)}"
-        )
-
-    except Exception as e:
-        print("[STARTUP INDEX ERROR]", e)
+    print("WEB INDEX URL =", cfg.get("web_index_url", "http://127.0.0.1:8088/"))
 
 
    
@@ -155,19 +119,6 @@ def main():
     app.license_manager = license_manager
 
 
-    # =========================
-    # HTTP WEBSERVER
-    # =========================
-    if bool(cfg.get("http_enabled", False)):
-        start_web_server(
-            folder=storage_path,
-            port=int(cfg.get("http_port", 18080)),
-            username=cfg.get("http_user", "admin"),
-            password=cfg.get("http_pass", "123456")
-        )
-    
-
-    
     # =========================
     # MAIN WINDOW
     # =========================

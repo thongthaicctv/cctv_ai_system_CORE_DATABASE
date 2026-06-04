@@ -149,6 +149,99 @@ class QREngineTests(unittest.TestCase):
 
         self.assertEqual(engine.started_ids, ["1", "3"])
 
+    def test_unprefixed_camera_scan_records_from_scanning_camera_mapping(self):
+        worker = QRWorker.__new__(QRWorker)
+        worker._handle_raw_business_scan = lambda _scan_cam_id, _text: False
+
+        calls = []
+        worker._start_order_targets = lambda targets, order: calls.append((targets, order)) or True
+
+        config = {
+            "cameras": [{"id": "1"}, {"id": "8"}],
+            "record_mapping": {"1": ["1"], "8": ["8"]},
+        }
+
+        with patch("services.qr_worker.load_config", return_value=config), patch(
+            "services.qr_worker.order_ok"
+        ):
+            worker._handle_command("8", "861881404914")
+
+        self.assertEqual(calls, [(["8"], "861881404914")])
+
+    def test_unprefixed_manual_command_still_uses_default_s01_mapping(self):
+        worker = QRWorker.__new__(QRWorker)
+        worker._handle_raw_business_scan = lambda _scan_cam_id, _text: False
+
+        calls = []
+        worker._start_order_targets = lambda targets, order: calls.append((targets, order)) or True
+
+        config = {
+            "cameras": [{"id": "1"}, {"id": "8"}],
+            "record_mapping": {"1": ["1", "2"], "8": ["8"]},
+        }
+
+        with patch("services.qr_worker.load_config", return_value=config), patch(
+            "services.qr_worker.order_ok"
+        ):
+            worker._handle_command("manual", "ORDER-MANUAL")
+
+        self.assertEqual(calls, [(["1", "2"], "ORDER-MANUAL")])
+
+    def test_unprefixed_stop_from_camera_stops_scanning_camera_mapping(self):
+        worker = QRWorker.__new__(QRWorker)
+        worker._handle_raw_business_scan = lambda _scan_cam_id, _text: False
+        worker._has_active_handover_flow = lambda _scanner_id: False
+        worker._save_mysql_ecom_video_before_stop = lambda *_args, **_kwargs: None
+        worker.packing_action_state = {}
+
+        class State:
+            def __init__(self):
+                self.stopped = []
+
+            def get(self, _cam_id):
+                return {}
+
+            def stop_record(self, cam_id, clear_employee=False):
+                self.stopped.append((cam_id, clear_employee))
+
+        worker.state = State()
+        config = {
+            "cameras": [{"id": "1"}, {"id": "8"}],
+            "record_mapping": {"1": ["1"], "8": ["8"]},
+        }
+
+        with patch("services.qr_worker.load_config", return_value=config), patch(
+            "services.qr_worker.stop_ok"
+        ):
+            worker._handle_command("8", "STOP")
+
+        self.assertEqual(worker.state.stopped, [("8", False)])
+
+    def test_duplicate_order_does_not_restart_recording(self):
+        worker = QRWorker.__new__(QRWorker)
+        worker._record_worker_for_target = lambda _target_id: object()
+        worker._save_mysql_ecom_video_before_stop = lambda *_args, **_kwargs: None
+
+        class State:
+            def __init__(self):
+                self.started = []
+                self.current = {"record_requested": True, "order_code": "ORDER-1"}
+
+            def get(self, _cam_id):
+                return dict(self.current)
+
+            def start_record(self, cam_id, order_code=""):
+                self.started.append((cam_id, order_code))
+                self.current = {"record_requested": True, "order_code": order_code}
+
+        worker.state = State()
+
+        self.assertFalse(worker._start_order_targets(["8"], "ORDER-1"))
+        self.assertEqual(worker.state.started, [])
+
+        self.assertTrue(worker._start_order_targets(["8"], "ORDER-2"))
+        self.assertEqual(worker.state.started, [("8", "ORDER-2")])
+
 
 if __name__ == "__main__":
     unittest.main()
