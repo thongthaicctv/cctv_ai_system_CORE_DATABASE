@@ -5,7 +5,6 @@
 import os
 import subprocess
 import sys
-import traceback
 import webbrowser
 
 from datetime import datetime
@@ -998,31 +997,6 @@ class _VideoTab(QWidget):
 
 
 
-        self.report_from = QLineEdit()
-        self.report_from.setPlaceholderText("Từ dd/mm/yyyy")
-        self.report_from.setFixedWidth(145)
-        self.report_from.setFixedHeight(34)
-
-        self.report_to = QLineEdit()
-        self.report_to.setPlaceholderText("Đến dd/mm/yyyy")
-        self.report_to.setFixedWidth(145)
-        self.report_to.setFixedHeight(34)
-
-        self.btn_report_all = QPushButton("📊 Xuất báo cáo")
-        self.btn_report_all.setStyleSheet(_BTN_PRIMARY)
-        self.btn_report_all.setFixedHeight(34)
-        self.btn_report_all.clicked.connect(self._export_report_all)
-
-        self.btn_handover_report = QPushButton("🚚 Xuất BC giao hàng")
-        self.btn_handover_report.setStyleSheet(_BTN_PRIMARY)
-        self.btn_handover_report.setFixedHeight(34)
-        self.btn_handover_report.clicked.connect(self._export_handover_report)
-
-        rr.addWidget(self.report_from)
-        rr.addWidget(self.report_to)
-        rr.addWidget(self.btn_report_all)
-        rr.addWidget(self.btn_handover_report)
-
         lo.addLayout(rr)
 
         
@@ -1172,54 +1146,6 @@ class _VideoTab(QWidget):
             return datetime.strptime(text, "%d/%m/%Y").strftime("%Y-%m-%d")
         except Exception:
             return None
-
-    def _validate_report_dates(self):
-        from_text = self.report_from.text().strip()
-        to_text = self.report_to.text().strip()
-
-        if not from_text or not to_text:
-            QMessageBox.warning(
-                self,
-                "Thiếu ngày",
-                "Vui lòng nhập đủ Từ ngày và Đến ngày.\nĐịnh dạng: dd/mm/yyyy\nVí dụ: 18/05/2026"
-            )
-            return None, None
-
-        from_date = self._vn_date_to_iso(from_text)
-        to_date = self._vn_date_to_iso(to_text)
-
-        if not from_date or not to_date:
-            QMessageBox.warning(
-                self,
-                "Sai định dạng",
-                "Ngày phải có định dạng dd/mm/yyyy\nVí dụ: 18/05/2026"
-            )
-            return None, None
-
-        return from_date, to_date
-    
-    # Data
-    def _export_report_all(self):
-        from_date, to_date = self._validate_report_dates()
-        if not from_date:
-            return
-        base_url = self._local_web_url().rstrip("/")
-        url = (
-            f"{base_url}/reports/order-status.xlsx"
-            f"?from_date={from_date}&to_date={to_date}"
-        )
-        webbrowser.open(url)
-
-    def _export_handover_report(self):
-        from_date, to_date = self._validate_report_dates()
-        if not from_date:
-            return
-        base_url = self._local_web_url().rstrip("/")
-        url = (
-            f"{base_url}/reports/order-status.xlsx"
-            f"?from_date={from_date}&to_date={to_date}"
-        )
-        webbrowser.open(url)
 
     def _load(self):
         try:
