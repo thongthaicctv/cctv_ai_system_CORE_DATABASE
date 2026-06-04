@@ -107,20 +107,20 @@ def main():
 
     license_manager = LicenseManager()
 
-    ok, msg = license_manager.check()
+    while True:
+        ok, msg = license_manager.check()
+        print(msg)
 
-    print(msg)
-
-    if not ok:
+        if ok:
+            break
 
         dlg = LicenseDialog(
             license_manager.device_id,
             msg
         )
 
-        dlg.exec()
-
-        sys.exit()
+        if dlg.exec() != dlg.Accepted:
+            sys.exit()
     # ========================= 
     # GLOBAL LICENSE MANAGER 
     # ========================= 

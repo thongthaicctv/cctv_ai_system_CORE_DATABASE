@@ -1,207 +1,137 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from core.logger import write_license_log
 
-from .hardware import get_hardware_hash, get_device_id
-from .cache_manager import CacheManager
 from .anti_rollback import AntiRollback
-
+from .cache_manager import CacheManager
 from .google_sync import update_cache_from_google
-from datetime import datetime, timedelta
+from .hardware import get_device_id, get_hardware_hash
+
+
 class LicenseManager:
-
     def __init__(self):
-
         self.device_id = get_device_id()
         self.hardware_hash = get_hardware_hash()
-
         self.data = None
 
     def load(self):
-
-
-        data = CacheManager.load()
-
-        if not data:
-            data = CacheManager.create_default(
-                self.device_id,
-                self.hardware_hash
-            )
-
-        self.data = data
-
-        return data
-    
-        
+        self.data = CacheManager.load()
+        return self.data
 
     def verify_hardware(self):
-
         if not self.data:
             return False
-
         return self.data.get("hardware_hash") == self.hardware_hash
 
-    def verify_expire(self):
-
-        expire_text = str(
-            self.data.get("expire_date", "")
-        ).strip()
-
+    def _parse_expire_date(self):
+        expire_text = str((self.data or {}).get("expire_date", "")).strip()
         if not expire_text:
-            return False
+            return None
 
-        formats = [
-            "%Y-%m-%d",
-            "%d/%m/%Y",
-            "%m/%d/%Y",
-        ]
-
-        expire_date = None
-
-        for fmt in formats:
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
             try:
-                expire_date = datetime.strptime(
-                    expire_text,
-                    fmt
-                )
-                break
-            except:
+                parsed = datetime.strptime(expire_text, fmt)
+                return parsed.replace(hour=23, minute=59, second=59, microsecond=999999)
+            except Exception:
                 pass
+        return None
 
+    def verify_expire(self):
+        expire_date = self._parse_expire_date()
         if not expire_date:
-            print("EXPIRE DATE INVALID:", expire_text)
+            print("EXPIRE DATE INVALID:", (self.data or {}).get("expire_date", ""))
             return False
-
         return datetime.now() <= expire_date
 
-    def verify_offline_days(self):
-
-        last_sync = datetime.fromisoformat(self.data["last_sync"])
-
-        days = (datetime.now() - last_sync).days
-
-        return days <= 30
-    
-
-  
-
-
     def check_offline_days(self):
-
-        last_sync = self.data.get("last_sync")
-
-        offline_days = int(
-            self.data.get("offline_days", 30)
-        )
+        last_sync = (self.data or {}).get("last_sync")
+        offline_days = int((self.data or {}).get("offline_days", 30) or 30)
 
         if not last_sync:
-            return False, "Không tìm thấy thời gian đồng bộ license."
+            return False, "Khong tim thay thoi gian dong bo license."
 
         try:
-            last_sync_time = datetime.fromisoformat(
-                str(last_sync)
-            )
-        except:
-            return False, "Dữ liệu thời gian license không hợp lệ."
+            last_sync_time = datetime.fromisoformat(str(last_sync))
+        except Exception:
+            return False, "Du lieu thoi gian license khong hop le."
 
         now = datetime.now()
-
         if now - last_sync_time > timedelta(days=offline_days):
             return False, (
-                f"License đã offline quá {offline_days} ngày.\n"
-                f"Vui lòng kết nối Internet để đồng bộ lại license."
+                f"License da offline qua {offline_days} ngay.\n"
+                "Vui long ket noi Internet de dong bo lai license."
             )
 
-        remain_days = (
-            offline_days - (now - last_sync_time).days
-        )
-
-        return True, (
-            f"OFFLINE_OK | "
-            f"Còn {remain_days} ngày cần kết nối Internet"
-        )
+        remain_days = offline_days - (now - last_sync_time).days
+        return True, f"OFFLINE_OK | Con {remain_days} ngay can ket noi Internet"
 
     def verify_time_rollback(self):
-
-        return not AntiRollback.is_time_invalid(
-            self.data["last_run_time"]
-        )
+        last_run_time = (self.data or {}).get("last_run_time")
+        if not last_run_time:
+            return True
+        return not AntiRollback.is_time_invalid(last_run_time)
 
     def update_last_run(self):
-
-        self.data["last_run_time"] = str(datetime.now())
-
-        CacheManager.save(self.data)
-
-    def check(self):
-
+        CacheManager.update_runtime(last_run_time=str(datetime.now()))
         self.load()
 
-        # =========================
-        # GOOGLE SYNC
-        # =========================
+    def expire_date_display(self):
+        expire_date = self._parse_expire_date()
+        if not expire_date:
+            return "N/A"
+        return expire_date.strftime("%d/%m/%Y")
+
+    def check(self):
+        self.load()
+        had_valid_cache = bool(self.data)
+
         ok_sync, sync_msg = update_cache_from_google(
             self.device_id,
-            self.hardware_hash
+            self.hardware_hash,
         )
-
         print(sync_msg)
 
-        if sync_msg == "DEVICE_ID_NOT_FOUND":
-
-            return False, (
-                "DEVICE_ID chưa được kích hoạt trên hệ thống ATG.\n"
-                "Vui lòng gửi Device ID cho quản trị viên Điện thoại 0904143113."
-            )
-
-        # nếu sync thành công thì reload cache mới
         if ok_sync:
             self.load()
-
-        # =========================
-        # STATUS
-        # =========================
-        if self.data.get(
-            "status",
-            ""
-        ).strip().lower() != "active":
-
-            msg = (
-                "LICENSE BLOCKED | "
-                "License đã bị khóa trên hệ thống ATG."
+        elif sync_msg in (
+            "LICENSE_HARDWARE_INVALID_GOOGLE",
+            "LICENSE_TOKEN_DEVICE_MISMATCH",
+        ):
+            return False, sync_msg
+        elif sync_msg.startswith("LICENSE_TOKEN_INVALID"):
+            return False, sync_msg
+        elif sync_msg == "DEVICE_ID_NOT_FOUND" and not had_valid_cache:
+            return False, (
+                "DEVICE_ID chua duoc kich hoat tren he thong ATG.\n"
+                "Vui long gui Device ID cho quan tri vien 0904143113."
             )
 
+        if not self.data:
+            return False, (
+                "Chua co signed license token hop le.\n"
+                "Vui long dan token kich hoat hoac lien he quan tri vien 0904143113."
+            )
+
+        if str(self.data.get("status", "")).strip().lower() != "active":
+            msg = "LICENSE BLOCKED | License da bi khoa tren he thong ATG. Vui long lien he quan tri vien 0904143113 de duoc ho tro."
             print(msg)
             write_license_log(msg)
-
             return False, msg
 
-        # =========================
-        # OFFLINE DAYS
-        # =========================
-        ok_offline, msg_offline = (
-            self.check_offline_days()
-        )
-
+        ok_offline, msg_offline = self.check_offline_days()
         print(msg_offline)
         write_license_log(msg_offline)
-
         if not ok_offline:
             return False, msg_offline
-        
+
+        if not self.verify_time_rollback():
+            return False, "LICENSE TIME ROLLBACK INVALID"
+
         if not self.verify_expire():
-            return False, "License đã hết hạn. Vui lòng liên hệ quản trị viên 0904143113 để gia hạn license."
+            return False, "License da het han. Vui long lien he quan tri vien 0904143113 de gia han license."
 
-        # =========================
-        # HARDWARE
-        # =========================
         if not self.verify_hardware():
-            return False, (
-                "LICENSE HARDWARE INVALID"
-            )
+            return False, "LICENSE HARDWARE INVALID"
 
+        self.update_last_run()
         return True, "LICENSE OK"
-    
-
-
-

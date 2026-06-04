@@ -133,8 +133,8 @@
             "id": "12",
             "name": "uniarch",
             "ip": "192.168.110.186",
-            "rtsp_main": "rtsp://admin:antn%402016@192.168.110.186:554/media/video1",
-            "rtsp_sub": "rtsp://admin:antn%402016@192.168.110.186:554/media/video2",
+            "rtsp_main": "rtsp://admin:123456@192.168.110.186:554/media/video1",
+            "rtsp_sub": "rtsp://admin:123456@192.168.110.186:554/media/video2",
             "area": "Debug",
             "enabled": true
         }

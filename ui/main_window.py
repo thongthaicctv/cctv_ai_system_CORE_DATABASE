@@ -68,7 +68,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Pro Video AI System  - ATG Solution Version 3.8 visitor: www.annguyen.pro - https://camerathainguyen.com - ĐT: 0208 656 5555")
+        self.setWindowTitle("Pro Video AI System  - ATG Solution Version 3.9.0 - visitor: www.annguyen.pro - https://camerathainguyen.com - ĐT: 0208 656 5555 / 090 414 3113")
         self.resize(1366, 768)
         self.setMinimumSize(1280, 700)
         app_icon = QIcon(resource_path("icon.ico"))
@@ -141,7 +141,7 @@ class MainWindow(QMainWindow):
         side.setContentsMargins(12, 12, 12, 12)
         side.setSpacing(8)
 
-        logo = QLabel("Pro Video AI System  - ATG Solution Version 3.8 visitor: www.annguyen.pro - https://camerathainguyen.com - ĐT: 0208 656 5555")
+        logo = QLabel("Pro Video AI System  - ATG Solution Version 3.9.0 - visitor: www.annguyen.pro - https://camerathainguyen.com - ĐT: 0208 656 5555 / 090 414 3113")
         logo.setFont(QFont("Segoe UI", 15, QFont.Bold))
 
         side.addWidget(logo)
@@ -223,18 +223,27 @@ class MainWindow(QMainWindow):
         background:transparent;
         """)
 
+        license_info = QLabel(self._license_info_text())
+        license_info.setAlignment(Qt.AlignCenter)
+        license_info.setStyleSheet("""
+        font-size:12px;
+        font-weight:bold;
+        color:#facc15;
+        background:transparent;
+        """)
+
         phone = QLabel("☎ 090 414 3113")
         phone.setAlignment(Qt.AlignCenter)
         phone.setStyleSheet("font-size:18px;color:#22c55e;background:transparent;")
 
-        zalo = QLabel("Zalo: 090 414 3113")
-        zalo.setAlignment(Qt.AlignCenter)
-        zalo.setStyleSheet("font-size:18px;color:#93c5fd;background:transparent;")
+        
+
 
         contact_layout.addWidget(logo)
         contact_layout.addWidget(company)
+        contact_layout.addWidget(license_info)
         contact_layout.addWidget(phone)
-        contact_layout.addWidget(zalo)
+        
 
         side.addWidget(contact_box)
 
@@ -401,6 +410,17 @@ class MainWindow(QMainWindow):
                 for item in group
             )
             log(f"DUPLICATE RTSP SOURCE: {camera_labels}")
+
+    def _license_info_text(self):
+        manager = getattr(QApplication.instance(), "license_manager", None)
+        data = getattr(manager, "data", None) or {}
+        expire = str(data.get("expire_date", "") or "N/A").strip()
+        try:
+            expire = datetime.strptime(expire, "%Y-%m-%d").strftime("%d/%m/%Y")
+        except Exception:
+            pass
+        max_camera = data.get("max_camera", "N/A")
+        return f"License Exp: {expire} | {max_camera} cam"
 
     def open_dashboard(self):
         # bỏ check hết nút cũ
