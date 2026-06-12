@@ -20,7 +20,7 @@ if getattr(sys, "frozen", False):
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialog
 from PySide6.QtGui import QIcon
 
 from core.gpu_acceleration import configure_opencv_acceleration, prepare_gpu_runtime
@@ -119,7 +119,7 @@ def main():
             msg
         )
 
-        if dlg.exec() != dlg.Accepted:
+        if dlg.exec() != QDialog.Accepted:
             sys.exit()
     # ========================= 
     # GLOBAL LICENSE MANAGER 

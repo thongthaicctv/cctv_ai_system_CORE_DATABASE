@@ -108,8 +108,8 @@ class LicenseManager:
 
         if not self.data:
             return False, (
-                "Chua co signed license token hop le.\n"
-                "Vui long dan token kich hoat hoac lien he quan tri vien 0904143113."
+                "Chua co license online hop le.\n"
+                "Vui long tao lien he voi quan tri vien 0904143113 de duoc ho tro."
             )
 
         if str(self.data.get("status", "")).strip().lower() != "active":

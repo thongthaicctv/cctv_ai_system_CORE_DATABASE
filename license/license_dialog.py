@@ -4,13 +4,10 @@ from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
-    QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
 )
 
-from .cache_manager import CacheManager
 from .hardware import get_hardware_hash
 
 
@@ -21,9 +18,11 @@ class LicenseDialog(QDialog):
         self.device_id = device_id
         self.hardware_hash = get_hardware_hash()
         self.setWindowTitle("Kich hoat License")
-        self.setFixedSize(680, 530)
+        self.setFixedSize(680, 380)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
 
         title = QLabel("ATG AI SYSTEM - LICENSE")
         title.setAlignment(Qt.AlignCenter)
@@ -49,12 +48,16 @@ class LicenseDialog(QDialog):
             }
         """)
 
-        self.txt_token = QPlainTextEdit()
-        self.txt_token.setPlaceholderText("Dan signed license token tai day...")
-        self.txt_token.setFixedHeight(110)
+        note = QLabel(
+            "Sau khi gui thong tin cho quan tri vien, "
+            "bam Load lai license de phan mem dong bo license."
+        )
+        note.setWordWrap(True)
+        note.setAlignment(Qt.AlignCenter)
+        note.setStyleSheet("font-size:12px;color:#cccccc;")
 
         btn_copy = QPushButton("Copy thong tin may")
-        btn_activate = QPushButton("Kich hoat token")
+        btn_reload = QPushButton("Load lai license")
         btn_close = QPushButton("Thoat")
 
         btn_copy.clicked.connect(
@@ -62,18 +65,18 @@ class LicenseDialog(QDialog):
                 f"DEVICE_ID={device_id}\nHARDWARE_HASH={self.hardware_hash}"
             )
         )
-        btn_activate.clicked.connect(self.activate_token)
+        btn_reload.clicked.connect(self.accept)
         btn_close.clicked.connect(self.reject)
 
         btns = QHBoxLayout()
         btns.addWidget(btn_copy)
-        btns.addWidget(btn_activate)
+        btns.addWidget(btn_reload)
         btns.addWidget(btn_close)
 
         layout.addWidget(title)
         layout.addWidget(msg)
         layout.addWidget(device)
-        layout.addWidget(self.txt_token)
+        layout.addWidget(note)
         layout.addLayout(btns)
 
         self.setStyleSheet("""
@@ -92,31 +95,4 @@ class LicenseDialog(QDialog):
             QPushButton:hover{
                 background:#0353e9;
             }
-            QPlainTextEdit{
-                background:#111;
-                color:#eeeeee;
-                border:1px solid #444;
-                border-radius:8px;
-                padding:8px;
-                font-size:12px;
-            }
         """)
-
-    def activate_token(self):
-        token = self.txt_token.toPlainText().strip()
-        if not token:
-            QMessageBox.warning(self, "Thieu token", "Vui long dan signed license token.")
-            return
-
-        try:
-            CacheManager.install_token(token, expected_device_id=self.device_id)
-        except Exception as exc:
-            QMessageBox.critical(self, "License token loi", str(exc))
-            return
-
-        QMessageBox.information(
-            self,
-            "Da luu",
-            "Da luu license token. Phan mem se kiem tra lai license.",
-        )
-        self.accept()
