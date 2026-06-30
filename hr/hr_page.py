@@ -10,7 +10,7 @@ import webbrowser
 from datetime import datetime
 
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor, QFont, QPixmap
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QFileDialog, QFormLayout,
@@ -917,6 +917,107 @@ class _HRTab(QWidget):
 # ─────────────────────────────────────────────
 # VIDEO TAB – Tra cứu video đã ghi
 # ─────────────────────────────────────────────
+def _query_video_stats_from_database():
+    from services.mysql_client import MySQLClient
+
+    db = MySQLClient()
+    with db.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                COUNT(id) AS total,
+                COALESCE(SUM(COALESCE(file_size, 0)), 0) / 1024 / 1024 AS size_mb,
+                COUNT(DISTINCT NULLIF(TRIM(CAST(camera_id AS CHAR)), '')) AS camera_count,
+                COUNT(DISTINCT
+                    CASE
+                        WHEN employee_code IS NULL THEN NULL
+                        WHEN TRIM(employee_code) = '' THEN NULL
+                        WHEN UPPER(TRIM(employee_code)) = 'NOEMP' THEN NULL
+                        ELSE TRIM(employee_code)
+                    END
+                ) AS employee_count
+            FROM packing_videos
+            """
+        )
+        row = cur.fetchone() or {}
+
+    return {
+        "total": int(row.get("total") or 0),
+        "size_mb": float(row.get("size_mb") or 0),
+        "camera_count": int(row.get("camera_count") or 0),
+        "employee_count": int(row.get("employee_count") or 0),
+    }
+
+
+def _query_videos_from_database(limit: int = 300):
+    from services.mysql_client import MySQLClient
+
+    db = MySQLClient()
+    with db.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                pv.id,
+                pv.order_code,
+                CAST(pv.camera_id AS CHAR) AS camera_id,
+                pv.camera_name,
+                pv.employee_code AS employee_id,
+                COALESCE(e.employee_name, pv.employee_name) AS employee_name,
+                e.department,
+                pv.file_name,
+                pv.file_path,
+                DATE(pv.created_at) AS date,
+                TIME(pv.created_at) AS time,
+                pv.start_time,
+                pv.end_time,
+                pv.duration_seconds AS duration_sec,
+                pv.file_size / 1024 / 1024 AS file_size_mb,
+                pv.result,
+                pv.created_at
+            FROM packing_videos pv
+            LEFT JOIN employees e ON e.employee_code = pv.employee_code
+            ORDER BY pv.id DESC
+            LIMIT %s
+            """,
+            (max(1, int(limit or 300)),),
+        )
+        rows = list(cur.fetchall())
+
+    videos = []
+    for row in rows:
+        item = dict(row)
+        for key in ("date", "time", "start_time", "end_time", "created_at"):
+            if item.get(key) is not None:
+                item[key] = str(item[key])
+        size = float(item.get("file_size_mb") or 0)
+        item["camera_id"] = str(item.get("camera_id") or "")
+        item["file_size_mb"] = round(size, 2)
+        item["filename"] = item.get("file_name") or os.path.basename(str(item.get("file_path") or ""))
+        videos.append(item)
+    return videos
+
+
+class _VideoLoadWorker(QThread):
+    loaded = Signal(dict)
+    load_failed = Signal(str)
+
+    def __init__(self, limit: int = 300, parent=None):
+        super().__init__(parent)
+        self.limit = max(1, int(limit or 300))
+
+    def run(self):
+        try:
+            self.loaded.emit(
+                {
+                    "stats": _query_video_stats_from_database(),
+                    "videos": _query_videos_from_database(self.limit),
+                    "limit": self.limit,
+                }
+            )
+        except Exception as exc:
+            self.load_failed.emit(str(exc))
+
+
 class _VideoTab(QWidget):
     def __init__(self):
         super().__init__()
@@ -925,6 +1026,9 @@ class _VideoTab(QWidget):
         self._storage = self._config.get("storage_path", "records")
         self._videos: list = []
         self._video_stats: dict = {}
+        self._video_limit = int(self._config.get("video_search_limit", 300) or 300)
+        self._load_worker = None
+        self._loading = False
         self._build()
         self._load()
 
@@ -1149,20 +1253,48 @@ class _VideoTab(QWidget):
             return None
 
     def _load(self):
-        try:
-            self._video_stats = self._query_video_stats_from_database()
-            self._videos = self._query_videos_from_database()
-        except Exception as exc:
-            self._videos = []
-            self._video_stats = {}
-            QMessageBox.warning(
-                self,
-                "Không đọc được database",
-                f"Không thể tải danh sách video từ MySQL/MariaDB.\n\n{exc}"
-            )
+        if self._loading:
+            return
+
+        self._loading = True
+        self.btn_reload_db.setEnabled(False)
+        self.btn_reload_db.setText("Dang tai...")
+        self.lbl_path.setText("Dang tai du lieu video tu MySQL/MariaDB...")
+
+        worker = _VideoLoadWorker(self._video_limit, self)
+        self._load_worker = worker
+        worker.loaded.connect(self._on_load_done)
+        worker.load_failed.connect(self._on_load_failed)
+        worker.finished.connect(self._on_load_finished)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _on_load_done(self, result: dict):
+        self._video_stats = result.get("stats") or {}
+        self._videos = result.get("videos") or []
+        limit = int(result.get("limit") or self._video_limit)
+
         self._update_stats()
         self._update_cam_filter()
         self._fill(self._videos)
+        self.lbl_path.setText(
+            f"Nguon du lieu: MySQL/MariaDB - hien thi {len(self._videos)} video moi nhat "
+            f"(gioi han {limit})"
+        )
+
+    def _on_load_failed(self, message: str):
+        self.lbl_path.setText("Khong tai duoc du lieu video tu MySQL/MariaDB")
+        QMessageBox.warning(
+            self,
+            "Khong doc duoc database",
+            f"Khong the tai danh sach video tu MySQL/MariaDB.\n\n{message}",
+        )
+
+    def _on_load_finished(self):
+        self._loading = False
+        self._load_worker = None
+        self.btn_reload_db.setEnabled(True)
+        self.btn_reload_db.setText("↻ Làm mới")
 
     def _query_video_stats_from_database(self):
         from services.mysql_client import MySQLClient
@@ -1258,17 +1390,22 @@ class _VideoTab(QWidget):
         self.c_emps.set_value(emps)
 
     def _update_cam_filter(self):
-        cams = sorted(set(v.get("camera_id", "") for v in self._videos))
+        current = self.f_cam.currentText()
+        cams = sorted(set(str(v.get("camera_id", "") or "") for v in self._videos))
         self.f_cam.clear()
         self.f_cam.addItem("Tất cả camera")
         for c in cams:
-            self.f_cam.addItem(c)
+            if c:
+                self.f_cam.addItem(c)
+        index = self.f_cam.findText(current)
+        if index >= 0:
+            self.f_cam.setCurrentIndex(index)
 
     def _fill(self, videos: list):
-        self.table.setRowCount(0)
-        for v in videos:
-            r = self.table.rowCount()
-            self.table.insertRow(r)
+        self.table.setUpdatesEnabled(False)
+        self.table.setSortingEnabled(False)
+        self.table.setRowCount(len(videos))
+        for r, v in enumerate(videos):
 
             # ── duration: dùng duration_sec (mới) hoặc duration (alias cũ) ──
             dur     = v.get("duration_sec") or v.get("duration", 0)
@@ -1292,11 +1429,11 @@ class _VideoTab(QWidget):
                 time_disp = v.get("time", "")[:5]
                 date_disp = v.get("date", "")
 
-            cam_item = QTableWidgetItem(v.get("camera_id", ""))
+            cam_item = QTableWidgetItem(str(v.get("camera_id", "") or ""))
             cam_item.setForeground(QColor(_ACCENT))
             cam_item.setFont(QFont("Consolas", 11, QFont.Bold))
 
-            order_item = QTableWidgetItem(order)
+            order_item = QTableWidgetItem(str(order))
             order_item.setForeground(QColor(_YELLOW))
 
             size_item = QTableWidgetItem(f"{sz_mb} MB")
@@ -1305,10 +1442,10 @@ class _VideoTab(QWidget):
             vals = [
                 (cam_item, None),
                 (order_item, None),
-                (QTableWidgetItem(emp), None),
-                (QTableWidgetItem(v.get("department", "—")), None),
-                (QTableWidgetItem(date_disp), None),
-                (QTableWidgetItem(time_disp), None),
+                (QTableWidgetItem(str(emp)), None),
+                (QTableWidgetItem(str(v.get("department", "—") or "—")), None),
+                (QTableWidgetItem(str(date_disp)), None),
+                (QTableWidgetItem(str(time_disp)), None),
                 (QTableWidgetItem(dur_txt), None),
                 (size_item, None),
             ]
@@ -1334,6 +1471,7 @@ class _VideoTab(QWidget):
             b_dl.clicked.connect(lambda _, p=full_path, n=v.get("filename",""): self._download(p, n))
             ahl.addWidget(b_play); ahl.addWidget(b_dl)
             self.table.setCellWidget(r, 8, aw)
+        self.table.setUpdatesEnabled(True)
 
     def _filter(self):
         kw = self.f_kw.text().lower()
@@ -1352,7 +1490,7 @@ class _VideoTab(QWidget):
             v for v in self._videos
             if (not kw or any(kw in str(v.get(f, "")).lower()
                             for f in ("camera_id","camera_name","order_code","qr_code","employee_id","employee_name","filename","date")))
-            and (cam == "Tất cả camera" or v.get("camera_id") == cam)
+            and (cam == self.f_cam.itemText(0) or str(v.get("camera_id", "") or "") == cam)
             and (not date or v.get("date", "").startswith(date))
             and (not order or order in v.get("order_code", "").lower())
         ]

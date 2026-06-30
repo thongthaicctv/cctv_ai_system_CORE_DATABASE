@@ -4,7 +4,7 @@ import ctypes
 import tempfile
 import msvcrt
 
-from license.license_dialog import LicenseDialog
+from license.license_dialog import LicenseDialog, LicenseNoticeDialog
 
 from core.config_manager import load_config
 from core.resource_paths import resource_path
@@ -126,6 +126,8 @@ def main():
     # ========================= 
     app.license_manager = license_manager
 
+    if license_manager.startup_notice:
+        LicenseNoticeDialog(license_manager.startup_notice).exec()
 
     # =========================
     # MAIN WINDOW

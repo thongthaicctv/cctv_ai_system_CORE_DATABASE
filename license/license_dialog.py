@@ -96,3 +96,60 @@ class LicenseDialog(QDialog):
                 background:#0353e9;
             }
         """)
+
+
+class LicenseNoticeDialog(QDialog):
+    def __init__(self, message):
+        super().__init__()
+
+        self.setWindowTitle("Thong bao ATG")
+        self.setFixedSize(620, 300)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 22, 22, 22)
+        layout.setSpacing(16)
+
+        title = QLabel("THONG BAO")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("font-size:20px;font-weight:bold;color:white;")
+
+        msg = QLabel(str(message or "").strip())
+        msg.setWordWrap(True)
+        msg.setAlignment(Qt.AlignCenter)
+        msg.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        msg.setStyleSheet("""
+            QLabel{
+                background:#111;
+                color:#ffdd66;
+                border:1px solid #00aa66;
+                border-radius:8px;
+                padding:18px;
+                font-size:15px;
+                font-weight:bold;
+            }
+        """)
+
+        btn_ok = QPushButton("OK")
+        btn_ok.clicked.connect(self.accept)
+
+        layout.addWidget(title)
+        layout.addWidget(msg, 1)
+        layout.addWidget(btn_ok)
+
+        self.setStyleSheet("""
+            QDialog{
+                background:#202020;
+            }
+            QPushButton{
+                background:#0f62fe;
+                color:white;
+                border:none;
+                border-radius:8px;
+                padding:10px;
+                font-size:14px;
+                font-weight:bold;
+            }
+            QPushButton:hover{
+                background:#0353e9;
+            }
+        """)

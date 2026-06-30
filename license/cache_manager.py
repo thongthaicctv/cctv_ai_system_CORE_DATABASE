@@ -9,7 +9,7 @@ class CacheManager:
     CACHE_VERSION = 2
 
     @staticmethod
-    def save_token(token: str, last_sync=None, last_run_time=None):
+    def save_token(token: str, last_sync=None, last_run_time=None, metadata=None):
         payload = verify_signed_token(token)
         now = str(datetime.now())
         envelope = {
@@ -18,6 +18,8 @@ class CacheManager:
             "last_sync": str(last_sync or now),
             "last_run_time": str(last_run_time or now),
         }
+        if isinstance(metadata, dict) and metadata:
+            envelope["metadata"] = metadata
         CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(envelope, f, ensure_ascii=False, indent=2)
@@ -25,6 +27,9 @@ class CacheManager:
         data["_signed_token"] = token.strip()
         data["last_sync"] = envelope["last_sync"]
         data["last_run_time"] = envelope["last_run_time"]
+        if isinstance(metadata, dict):
+            for key, value in metadata.items():
+                data[f"_{key}"] = value
         return data
 
     @staticmethod
@@ -45,6 +50,9 @@ class CacheManager:
             token,
             last_sync=(data or {}).get("last_sync"),
             last_run_time=(data or {}).get("last_run_time"),
+            metadata={
+                "sheet_note": (data or {}).get("_sheet_note", ""),
+            },
         )
 
     @staticmethod
@@ -70,6 +78,10 @@ class CacheManager:
             data["_signed_token"] = token
             data["last_sync"] = envelope.get("last_sync") or data.get("issued_at")
             data["last_run_time"] = envelope.get("last_run_time") or data.get("last_sync")
+            metadata = envelope.get("metadata") or {}
+            if isinstance(metadata, dict):
+                for key, value in metadata.items():
+                    data[f"_{key}"] = value
             return data
         except Exception:
             return None

@@ -13,6 +13,7 @@ class LicenseManager:
         self.device_id = get_device_id()
         self.hardware_hash = get_hardware_hash()
         self.data = None
+        self.startup_notice = None
 
     def load(self):
         self.data = CacheManager.load()
@@ -81,9 +82,20 @@ class LicenseManager:
             return "N/A"
         return expire_date.strftime("%d/%m/%Y")
 
+    def _sheet_notice_from_data(self):
+        note = str((self.data or {}).get("_sheet_note", "")).strip()
+        if not note:
+            return None
+
+        if note.lower() in {"none", "null", "false", "0", "no", "khong", "không"}:
+            return None
+
+        return note
+
     def check(self):
         self.load()
         had_valid_cache = bool(self.data)
+        self.startup_notice = None
 
         ok_sync, sync_msg = update_cache_from_google(
             self.device_id,
@@ -93,6 +105,7 @@ class LicenseManager:
 
         if ok_sync:
             self.load()
+            self.startup_notice = self._sheet_notice_from_data()
         elif sync_msg in (
             "LICENSE_HARDWARE_INVALID_GOOGLE",
             "LICENSE_TOKEN_DEVICE_MISMATCH",

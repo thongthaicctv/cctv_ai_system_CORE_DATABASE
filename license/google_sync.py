@@ -48,6 +48,7 @@ def fetch_license_from_google(device_id):
             return {
                 "signed_token": token,
                 "payload": payload,
+                "sheet_note": _row_value(row, "NOTE", "note"),
             }, "GOOGLE_SYNC_OK"
 
         return None, "DEVICE_ID_NOT_FOUND"
@@ -67,5 +68,8 @@ def update_cache_from_google(device_id, hardware_hash):
     CacheManager.save_token(
         data["signed_token"],
         last_sync=str(datetime.now()),
+        metadata={
+            "sheet_note": data.get("sheet_note", ""),
+        },
     )
     return True, "ATG_LICENSE_UPDATED_FROM_GOOGLE"
