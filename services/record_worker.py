@@ -18,13 +18,14 @@ DEFAULT_RECORD_AUTO_STOP_SECONDS = 300
 WAIT_RECORD_UPDATE_TIMEOUT_SECONDS = 1.0
 RETRY_DELAY_SECONDS = 1.0
 RECORD_ERROR_SOUND_INTERVAL_SECONDS = 10.0
-FFMPEG_STARTUP_CHECK_SECONDS = 1.0
+FFMPEG_STARTUP_CHECK_SECONDS = 2.0
 FFMPEG_POLL_DELAY_SECONDS = 0.2
-DEFAULT_RECORD_STARTUP_READY_TIMEOUT_SECONDS = 4.0
+DEFAULT_RECORD_STARTUP_READY_TIMEOUT_SECONDS = 10.0
 DEFAULT_RECORD_STARTUP_MIN_FILE_BYTES = 512
-DEFAULT_RECORD_STARTUP_PROBE_TIMEOUT_SECONDS = 8.0
+DEFAULT_RECORD_STARTUP_PROBE_TIMEOUT_SECONDS = 12.0
 SHARED_RECORD_JOIN_WINDOW_SECONDS = 0.4
-SHARED_RECORD_WAIT_SECONDS = 6.0
+SHARED_RECORD_WAIT_SECONDS = 15.0
+FFMPEG_STDERR_TAIL_CHARS = 4000
 FFMPEG_PATHS = (
     r"C:\ffmpeg\bin\ffmpeg.exe",
     "ffmpeg",
@@ -306,27 +307,6 @@ class RecordWorker:
                 startup_errors.append(self._describe_rtsp_candidate(rtsp, "startup failed"))
                 continue
 
-            ready, ready_error = self._wait_for_output_ready(process, [output_path])
-            if not ready:
-                probe_ok, probe_error = self._verify_rtsp_candidate(ffmpeg, rtsp)
-                if not probe_ok or process.poll() is not None:
-                    self._terminate_ffmpeg_process(process)
-                    err = ready_error
-                    extra = self._read_ffmpeg_error_tail(process)
-                    if extra and extra not in err:
-                        err = f"{err} | {extra}"
-                    if probe_error and probe_error not in err:
-                        err = f"{err} | verify probe: {probe_error}"
-                    self._cleanup_failed_files([output_path])
-                    log(f"{self.cam['name']} FFMPEG START VERIFY FAIL: {err}")
-                    startup_errors.append(self._describe_rtsp_candidate(rtsp, err))
-                    continue
-
-                log(
-                    f"{self.cam['name']} FFMPEG START VERIFY DELAYED OUTPUT: "
-                    f"{self._describe_rtsp_candidate(rtsp, ready_error)}"
-                )
-
             self.ffmpeg_process = process
             self.current_file = output_path
             self.current_order = snapshot.get("order_code", "")
@@ -388,30 +368,6 @@ class RecordWorker:
 
                 startup_errors.append(self._describe_rtsp_candidate(rtsp, "startup failed"))
                 continue
-
-            ready, ready_error = self._wait_for_output_ready(
-                process,
-                [output_paths[cam_id] for cam_id in candidate_ids],
-            )
-            if not ready:
-                probe_ok, probe_error = self._verify_rtsp_candidate(ffmpeg, rtsp)
-                if not probe_ok or process.poll() is not None:
-                    self._terminate_ffmpeg_process(process)
-                    err = ready_error
-                    extra = self._read_ffmpeg_error_tail(process)
-                    if extra and extra not in err:
-                        err = f"{err} | {extra}"
-                    if probe_error and probe_error not in err:
-                        err = f"{err} | verify probe: {probe_error}"
-                    self._cleanup_failed_files(output_paths.values())
-                    log(f"{self.cam['name']} FFMPEG START VERIFY FAIL: {err}")
-                    startup_errors.append(self._describe_rtsp_candidate(rtsp, err))
-                    continue
-
-                log(
-                    f"{self.cam['name']} FFMPEG START VERIFY DELAYED OUTPUT: "
-                    f"{self._describe_rtsp_candidate(rtsp, ready_error)}"
-                )
 
             started_mono = time.monotonic()
             SHARED_SOURCE_REGISTRY.publish_running(
@@ -516,53 +472,67 @@ class RecordWorker:
         return ""
 
     def _ffmpeg_copy_command(self, ffmpeg, rtsp, output_paths):
+        # Stable RTSP recording profile:
+        # - MKV only
+        # - RTSP over TCP
+        # - copy video stream, no re-encode
+        # - default video-only to avoid bad audio/data/metadata streams on OEM/H.265 cameras
+        video_only = bool(self.cam.get("record_video_only", True))
+
         command = [
             ffmpeg,
             "-y",
             "-hide_banner",
             "-loglevel",
             "warning",
-
-            # RTSP ổn định hơn cho camera IP
             "-rtsp_transport",
             "tcp",
-
-            # Tạo timestamp ổn hơn khi camera gửi gói không đều
+            "-rtsp_flags",
+            "prefer_tcp",
             "-fflags",
-            "+genpts",
+            "+genpts+discardcorrupt",
+            "-err_detect",
+            "ignore_err",
             "-use_wallclock_as_timestamps",
             "1",
-
+            "-analyzeduration",
+            str(int(self.cam.get("record_analyzeduration_us", 20000000))),
+            "-probesize",
+            str(int(self.cam.get("record_probesize_bytes", 20000000))),
             "-i",
             rtsp,
         ]
 
         for output_path in output_paths:
-            command.extend(
-                [
-                    # KHÔNG dùng -map 0 vì Uniarch có Data stream dễ lỗi.
-                    # Chỉ lấy video chính.
-                    "-map",
-                    "0:v:0",
+            output_options = [
+                "-map",
+                "0:v:0",
+                "-c:v",
+                "copy",
+                "-sn",
+                "-dn",
+                "-avoid_negative_ts",
+                "make_zero",
+                "-flush_packets",
+                "1",
+                "-f",
+                "matroska",
+                output_path,
+            ]
 
-                    # Lấy audio nếu có, nếu không có cũng không lỗi.
-                    "-map",
-                    "0:a?",
+            if video_only:
+                output_options[4:4] = ["-an"]
+            else:
+                output_options[4:4] = ["-map", "0:a?", "-c:a", "copy"]
 
-                    "-c",
-                    "copy",
-
-                    "-f",
-                    "matroska",
-                    output_path,
-                ]
-            )
+            command.extend(output_options)
 
         return command
+
     def _start_ffmpeg(self, command):
         startupinfo, creationflags = hidden_process_flags()
         try:
-            return subprocess.Popen(
+            process = subprocess.Popen(
                 command,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
@@ -573,9 +543,33 @@ class RecordWorker:
                 encoding="utf-8",
                 errors="ignore",
             )
+            self._start_ffmpeg_stderr_drain(process)
+            return process
         except Exception as e:
             log(f"[FFMPEG SPAWN ERROR] {e}")
             return None
+
+    def _start_ffmpeg_stderr_drain(self, process):
+        if process is None or process.stderr is None:
+            return
+
+        process._stderr_tail = ""
+
+        def drain():
+            try:
+                for line in process.stderr:
+                    tail = f"{getattr(process, '_stderr_tail', '')}{line}"
+                    process._stderr_tail = tail[-FFMPEG_STDERR_TAIL_CHARS:]
+            except Exception:
+                pass
+
+        thread = threading.Thread(
+            target=drain,
+            name=f"ffmpeg-stderr-{self.cam.get('id', 'cam')}",
+            daemon=True,
+        )
+        process._stderr_drain_thread = thread
+        thread.start()
 
     def _wait_for_output_ready(self, process, output_paths):
         timeout_seconds = self._startup_ready_timeout_seconds()
@@ -664,8 +658,24 @@ class RecordWorker:
             "warning",
             "-rtsp_transport",
             "tcp",
+            "-rtsp_flags",
+            "prefer_tcp",
+            "-timeout",
+            "10000000",
+            "-rw_timeout",
+            "10000000",
+            "-thread_queue_size",
+            "512",
             "-fflags",
-            "+genpts",
+            "+genpts+discardcorrupt",
+            "-err_detect",
+            "ignore_err",
+            "-max_delay",
+            "500000",
+            "-analyzeduration",
+            "10000000",
+            "-probesize",
+            "10000000",
             "-use_wallclock_as_timestamps",
             "1",
             "-i",
@@ -673,7 +683,9 @@ class RecordWorker:
             "-map",
             "0:v:0",
             "-an",
-            "-frames:v",
+            "-c:v",
+            "copy",
+            "-t",
             "1",
             "-f",
             "null",
@@ -1006,6 +1018,17 @@ class RecordWorker:
     def _read_ffmpeg_error_tail(self, process, max_chars=2000):
         if process is None or process.stderr is None:
             return ""
+
+        thread = getattr(process, "_stderr_drain_thread", None)
+        if process.poll() is not None and thread is not None:
+            try:
+                thread.join(timeout=0.2)
+            except Exception:
+                pass
+
+        tail = getattr(process, "_stderr_tail", "")
+        if tail:
+            return str(tail)[-max_chars:].strip()
 
         try:
             text = process.stderr.read() or ""
