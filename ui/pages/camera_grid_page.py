@@ -32,6 +32,7 @@ class CameraGridPage(QWidget):
         self.cards = {}
         self.cameras = []
         self._camera_signature = ()
+        self._preview_processes = {}
         
 
         self.title = QLabel("TRẠNG THÁI CAMERA")
@@ -165,7 +166,8 @@ class CameraGridPage(QWidget):
 
             self.open_preview(
                 cam.get("name", f"CAM-{cam_id}"),
-                rtsp
+                rtsp,
+                cam_id=cam_id,
             )
 
         return handler
@@ -206,7 +208,43 @@ class CameraGridPage(QWidget):
         return ""
 
 
-    def open_preview(self, name, rtsp):
+    def _vlc_preview_command(self, vlc_exe, rtsp):
+        return [
+            vlc_exe,
+            "--rtsp-tcp",
+            "--network-caching=1000",
+            "--live-caching=1000",
+            "--file-caching=1000",
+            "--drop-late-frames",
+            "--skip-frames",
+            "--avcodec-fast",
+            "--avcodec-hw=none",
+            "--no-audio",
+            "--no-video-title-show",
+            rtsp,
+        ]
+
+    def _cleanup_preview_processes(self):
+        for cam_id, process in list(self._preview_processes.items()):
+            if process is None or process.poll() is not None:
+                self._preview_processes.pop(cam_id, None)
+
+    def _close_existing_preview(self, preview_key):
+        preview_key = str(preview_key or "")
+        process = self._preview_processes.pop(preview_key, None)
+        if process is None or process.poll() is not None:
+            return
+
+        try:
+            process.terminate()
+            process.wait(timeout=1.5)
+        except Exception:
+            try:
+                process.kill()
+            except Exception:
+                pass
+
+    def open_preview(self, name, rtsp, cam_id=None):
         """
         Preview bằng VLC external.
         Không dùng OpenCV, không decode frame trong app.
@@ -234,16 +272,15 @@ class CameraGridPage(QWidget):
             return
 
         try:
-            subprocess.Popen(
-                [
-                    vlc_exe,
-                    "--rtsp-tcp",
-                    "--network-caching=300",
-                    "--no-video-title-show",
-                    rtsp,
-                ],
+            self._cleanup_preview_processes()
+            preview_key = str(cam_id or name or rtsp)
+            self._close_existing_preview(preview_key)
+
+            process = subprocess.Popen(
+                self._vlc_preview_command(vlc_exe, rtsp),
                 shell=False
             )
+            self._preview_processes[preview_key] = process
 
             log(f"VLC PREVIEW {name}")
 
