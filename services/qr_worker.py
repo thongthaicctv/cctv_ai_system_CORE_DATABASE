@@ -16,19 +16,26 @@ except Exception:
     OrderSystemRepo = None
 
 
-from services.qr_decoder import decode_qr_texts, decode_qr_texts_fast, parse_qr_command
+from services.qr_decoder import (
+    decode_qr_texts,
+    decode_qr_texts_fast,
+    decode_qr_texts_opencv_fast,
+    parse_qr_command,
+)
 from utils.url_helper import camera_rtsp_url, open_rtsp_capture
 
 
-DEFAULT_SCAN_INTERVAL = 0.01
+DEFAULT_SCAN_INTERVAL = 0.02
 DEFAULT_DUPLICATE_SECONDS = 5
 RECONNECT_DELAY_SECONDS = 2
 MAX_RECONNECT_DELAY_SECONDS = 30
 RTSP_OPEN_TIMEOUT_MSEC = 5000
 RTSP_READ_TIMEOUT_MSEC = 5000
-FULL_SCAN_EVERY_FRAMES = 2
-SLOW_SCAN_EVERY_FRAMES = 8
-SCAN_MAX_WIDTH = 1280
+FULL_SCAN_EVERY_FRAMES = 3
+SLOW_SCAN_EVERY_FRAMES = 15
+SCAN_MAX_WIDTH = 960
+HEAVY_SCAN_MAX_WIDTH = 1280
+DROP_STALE_FRAMES = 1
 DEFAULT_RECORD_SCANNER_ID = "s01"
 
 
@@ -42,6 +49,10 @@ class QRWorker:
         self.cap = None
         self.fail_count = 0
         self.frame_index = 0
+        try:
+            self.qr_config = dict((load_config() or {}).get("qr", {}) or {})
+        except Exception:
+            self.qr_config = {}
 
         self.packing_service = PackingService(
             start_record_callback=self._packing_start_record,
@@ -83,6 +94,7 @@ class QRWorker:
                 continue
 
             try:
+                self._drop_stale_frames()
                 ok, frame = self.cap.read()
             except Exception as exc:
                 self.state.set_error(cam_id, f"Read RTSP failed: {exc}")
@@ -104,7 +116,7 @@ class QRWorker:
                 self._clean_seen_cache()
 
             self._scan_frame(cam_id, frame)
-            time.sleep(float(self.cam.get("qr_scan_interval", DEFAULT_SCAN_INTERVAL)))
+            time.sleep(float(self._qr_setting("scan_interval", DEFAULT_SCAN_INTERVAL)))
 
         self._release_capture()
 
@@ -117,6 +129,7 @@ class QRWorker:
             rtsp,
             open_timeout_msec=self.cam.get("rtsp_open_timeout_msec", RTSP_OPEN_TIMEOUT_MSEC),
             read_timeout_msec=self.cam.get("rtsp_read_timeout_msec", RTSP_READ_TIMEOUT_MSEC),
+            prefer_direct=False,
         )
 
         if self.cap.isOpened():
@@ -139,17 +152,29 @@ class QRWorker:
             self.cap.release()
             self.cap = None
 
-    def _scan_frame(self, cam_id, frame):
-        frame = self._prepare_frame(frame)
+    def _drop_stale_frames(self):
+        drop_count = max(0, int(self._qr_setting("drop_stale_frames", DROP_STALE_FRAMES)))
+        for _index in range(drop_count):
+            try:
+                if not self.cap.grab():
+                    break
+            except Exception:
+                break
 
-        for region in self._fast_scan_regions(frame):
-            if self._process_texts(cam_id, decode_qr_texts_fast(region)):
+    def _scan_frame(self, cam_id, frame):
+        realtime_frame = self._prepare_frame(frame)
+
+        for region in self._realtime_scan_regions(realtime_frame):
+            if self._process_texts(cam_id, decode_qr_texts_opencv_fast(region)):
                 return
 
         if self.frame_index % self._slow_scan_every_frames() != 0:
             return
 
-        for region in self._slow_scan_regions(frame):
+        heavy_frame = self._prepare_heavy_frame(frame)
+        for region in self._heavy_scan_regions(heavy_frame):
+            if self._process_texts(cam_id, decode_qr_texts_fast(region)):
+                return
             if self._process_texts(cam_id, decode_qr_texts(region)):
                 return
 
@@ -165,12 +190,12 @@ class QRWorker:
 
         return False
 
-    def _fast_scan_regions(self, frame):
+    def _realtime_scan_regions(self, frame):
         yield self._center_roi(frame)
         if self.frame_index % self._full_scan_every_frames() == 0:
             yield frame
 
-    def _slow_scan_regions(self, frame):
+    def _heavy_scan_regions(self, frame):
         yield self._center_roi(frame)
         yield frame
 
@@ -183,7 +208,14 @@ class QRWorker:
         return frame[y1:y2, x1:x2]
 
     def _prepare_frame(self, frame):
-        max_width = int(self.cam.get("qr_max_width", SCAN_MAX_WIDTH))
+        max_width = int(self._qr_setting("max_width", SCAN_MAX_WIDTH))
+        return self._resize_frame(frame, max_width)
+
+    def _prepare_heavy_frame(self, frame):
+        max_width = int(self._qr_setting("heavy_scan_max_width", HEAVY_SCAN_MAX_WIDTH))
+        return self._resize_frame(frame, max_width)
+
+    def _resize_frame(self, frame, max_width):
         if frame is None or max_width <= 0:
             return frame
 
@@ -199,10 +231,16 @@ class QRWorker:
         )
 
     def _full_scan_every_frames(self):
-        return max(1, int(self.cam.get("qr_full_scan_every_frames", FULL_SCAN_EVERY_FRAMES)))
+        return max(1, int(self._qr_setting("full_scan_every_frames", FULL_SCAN_EVERY_FRAMES)))
 
     def _slow_scan_every_frames(self):
-        return max(1, int(self.cam.get("qr_slow_scan_every_frames", SLOW_SCAN_EVERY_FRAMES)))
+        return max(1, int(self._qr_setting("slow_scan_every_frames", SLOW_SCAN_EVERY_FRAMES)))
+
+    def _qr_setting(self, name, default):
+        legacy_name = f"qr_{name}"
+        if legacy_name in self.cam:
+            return self.cam.get(legacy_name, default)
+        return self.qr_config.get(name, default)
 
     def _should_accept(self, text):
         now = time.time()

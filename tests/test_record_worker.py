@@ -103,6 +103,39 @@ class RecordWorkerTests(unittest.TestCase):
             ],
         )
 
+    def test_ffmpeg_copy_command_can_write_mpegts_fallback(self):
+        worker = RecordWorker(
+            {"id": "1", "name": "CAM-1"},
+            DummyState(),
+            "G:/recordings",
+            300,
+        )
+
+        command = worker._ffmpeg_copy_command(
+            "ffmpeg.exe",
+            "rtsp://camera/main",
+            ["G:/a.ts"],
+            container="mpegts",
+        )
+
+        self.assertIn("-f", command)
+        self.assertEqual(command[command.index("-f") + 1], "mpegts")
+        self.assertEqual(command[-1], "G:/a.ts")
+
+    def test_hevc_missing_vps_error_uses_mpegts_fallback(self):
+        worker = RecordWorker(
+            {"id": "1", "name": "CAM-1"},
+            DummyState(),
+            "G:/recordings",
+            300,
+        )
+
+        self.assertTrue(
+            worker._should_try_mpegts_fallback(
+                "VPS 0 does not exist. Could not write header for output file"
+            )
+        )
+
     def test_wait_for_output_ready_requires_real_file_growth(self):
         worker = RecordWorker(
             {

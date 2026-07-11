@@ -26,6 +26,10 @@ DEFAULT_RECORD_STARTUP_PROBE_TIMEOUT_SECONDS = 12.0
 SHARED_RECORD_JOIN_WINDOW_SECONDS = 0.4
 SHARED_RECORD_WAIT_SECONDS = 15.0
 FFMPEG_STDERR_TAIL_CHARS = 4000
+RECORD_CONTAINER_MKV = "matroska"
+RECORD_CONTAINER_MPEGTS = "mpegts"
+RECORD_EXTENSION_MKV = ".mkv"
+RECORD_EXTENSION_MPEGTS = ".ts"
 FFMPEG_PATHS = (
     r"C:\ffmpeg\bin\ffmpeg.exe",
     "ffmpeg",
@@ -284,29 +288,23 @@ class RecordWorker:
         return self._open_shared_session(snapshot, ffmpeg, rtsp_candidates, candidate_ids, source_key)
 
     def _open_single_session(self, snapshot, ffmpeg, rtsp_candidates):
-        output_path = self._build_output_path(snapshot, self.cam)
         startup_errors = []
 
         for attempt_index, rtsp in enumerate(rtsp_candidates):
-            process = self._start_ffmpeg(
-                self._ffmpeg_copy_command(ffmpeg, rtsp, [output_path])
+            opened = self._open_record_process(
+                snapshot,
+                ffmpeg,
+                rtsp,
+                {str(self.cam["id"]): self.cam},
             )
+            process = opened.get("process")
             if process is None:
-                startup_errors.append(self._describe_rtsp_candidate(rtsp, "spawn failed"))
+                startup_errors.append(
+                    self._describe_rtsp_candidate(rtsp, opened.get("error") or "startup failed")
+                )
                 continue
 
-            time.sleep(FFMPEG_STARTUP_CHECK_SECONDS)
-            if process.poll() is not None:
-                err = self._read_ffmpeg_error_tail(process)
-                self._terminate_ffmpeg_process(process)
-                self._cleanup_failed_files([output_path])
-
-                if err:
-                    log(f"{self.cam['name']} FFMPEG STARTUP ERROR: {err}")
-
-                startup_errors.append(self._describe_rtsp_candidate(rtsp, "startup failed"))
-                continue
-
+            output_path = opened["output_paths"][str(self.cam["id"])]
             self.ffmpeg_process = process
             self.current_file = output_path
             self.current_order = snapshot.get("order_code", "")
@@ -330,6 +328,8 @@ class RecordWorker:
                 )
 
             log(f"{self.cam['name']} START {self.current_order}")
+            if opened.get("container") == RECORD_CONTAINER_MPEGTS:
+                log(f"{self.cam['name']} REC FALLBACK MPEGTS {self.current_order}")
             return True
 
         error_message = self._startup_error_message(startup_errors)
@@ -340,35 +340,26 @@ class RecordWorker:
     def _open_shared_session(self, snapshot, ffmpeg, rtsp_candidates, candidate_ids, source_key):
         startup_errors = []
         order_code = snapshot.get("order_code", "")
-        output_paths = {
-            str(cam_id): self._build_output_path(self.state.get(cam_id), self._camera_for_id(cam_id))
+        output_cameras = {
+            str(cam_id): self._camera_for_id(cam_id)
             for cam_id in candidate_ids
         }
 
         for attempt_index, rtsp in enumerate(rtsp_candidates):
-            process = self._start_ffmpeg(
-                self._ffmpeg_copy_command(
-                    ffmpeg,
-                    rtsp,
-                    [output_paths[cam_id] for cam_id in candidate_ids],
-                )
+            opened = self._open_record_process(
+                snapshot,
+                ffmpeg,
+                rtsp,
+                output_cameras,
             )
+            process = opened.get("process")
             if process is None:
-                startup_errors.append(self._describe_rtsp_candidate(rtsp, "spawn failed"))
+                startup_errors.append(
+                    self._describe_rtsp_candidate(rtsp, opened.get("error") or "startup failed")
+                )
                 continue
 
-            time.sleep(FFMPEG_STARTUP_CHECK_SECONDS)
-            if process.poll() is not None:
-                err = self._read_ffmpeg_error_tail(process)
-                self._terminate_ffmpeg_process(process)
-                self._cleanup_failed_files(output_paths.values())
-
-                if err:
-                    log(f"{self.cam['name']} FFMPEG STARTUP ERROR: {err}")
-
-                startup_errors.append(self._describe_rtsp_candidate(rtsp, "startup failed"))
-                continue
-
+            output_paths = opened["output_paths"]
             started_mono = time.monotonic()
             SHARED_SOURCE_REGISTRY.publish_running(
                 source_key,
@@ -405,6 +396,8 @@ class RecordWorker:
             for cam_id in candidate_ids:
                 self._mark_record_started(cam_id, output_paths[cam_id])
                 log(f"{self._camera_name(cam_id)} START {order_code}")
+                if opened.get("container") == RECORD_CONTAINER_MPEGTS:
+                    log(f"{self._camera_name(cam_id)} REC FALLBACK MPEGTS {order_code}")
 
             return True
 
@@ -471,9 +464,104 @@ class RecordWorker:
 
         return ""
 
-    def _ffmpeg_copy_command(self, ffmpeg, rtsp, output_paths):
+    def _record_formats(self):
+        formats = [(RECORD_CONTAINER_MKV, RECORD_EXTENSION_MKV)]
+        if bool(self.cam.get("record_mpegts_fallback", True)):
+            formats.append((RECORD_CONTAINER_MPEGTS, RECORD_EXTENSION_MPEGTS))
+        return formats
+
+    def _build_output_paths(self, snapshot, cameras_by_id, extension):
+        paths = {}
+        for cam_id, cam in cameras_by_id.items():
+            cam_id = str(cam_id)
+            cam_snapshot = snapshot if cam_id == str(self.cam["id"]) else self.state.get(cam_id)
+            paths[cam_id] = self._build_output_path(cam_snapshot, cam, extension=extension)
+        return paths
+
+    def _open_record_process(self, snapshot, ffmpeg, rtsp, cameras_by_id):
+        last_error = ""
+
+        for index, (container, extension) in enumerate(self._record_formats()):
+            output_paths = self._build_output_paths(snapshot, cameras_by_id, extension)
+            process = self._start_ffmpeg(
+                self._ffmpeg_copy_command(
+                    ffmpeg,
+                    rtsp,
+                    list(output_paths.values()),
+                    container=container,
+                )
+            )
+            if process is None:
+                self._cleanup_failed_files(output_paths.values())
+                last_error = "spawn failed"
+                continue
+
+            time.sleep(FFMPEG_STARTUP_CHECK_SECONDS)
+            if process.poll() is None:
+                return {
+                    "process": process,
+                    "output_paths": output_paths,
+                    "container": container,
+                }
+
+            err = self._read_ffmpeg_error_tail(process)
+            self._terminate_ffmpeg_process(process)
+            self._cleanup_failed_files(output_paths.values())
+
+            if err:
+                log(f"{self.cam['name']} FFMPEG STARTUP ERROR: {err}")
+            last_error = self._summarize_ffmpeg_startup_error(err)
+
+            if index == 0 and self._should_try_mpegts_fallback(err):
+                log(f"{self.cam['name']} REC RETRY MPEGTS because {last_error}")
+                continue
+
+            break
+
+        return {
+            "process": None,
+            "output_paths": {},
+            "container": "",
+            "error": last_error or "startup failed",
+        }
+
+    def _should_try_mpegts_fallback(self, error_text):
+        if not bool(self.cam.get("record_mpegts_fallback", True)):
+            return False
+
+        text = str(error_text or "").lower()
+        return any(
+            marker in text
+            for marker in (
+                "vps 0 does not exist",
+                "sps 0 does not exist",
+                "pps 0 does not exist",
+                "could not write header",
+                "incorrect codec parameters",
+                "invalid data found when processing input",
+                "error initializing output stream",
+            )
+        )
+
+    def _summarize_ffmpeg_startup_error(self, error_text):
+        text = " ".join(str(error_text or "").split())
+        if not text:
+            return "startup failed"
+        if "VPS 0 does not exist" in text:
+            return "HEVC missing VPS, MKV header failed"
+        if "Could not write header" in text:
+            return "container header failed"
+        return text[-240:]
+
+    def _ffmpeg_copy_command(
+        self,
+        ffmpeg,
+        rtsp,
+        output_paths,
+        container=RECORD_CONTAINER_MKV,
+    ):
         # Stable RTSP recording profile:
-        # - MKV only
+        # - MKV by default, MPEG-TS fallback for HEVC streams missing VPS/SPS/PPS at startup
         # - RTSP over TCP
         # - copy video stream, no re-encode
         # - default video-only to avoid bad audio/data/metadata streams on OEM/H.265 cameras
@@ -516,7 +604,7 @@ class RecordWorker:
                 "-flush_packets",
                 "1",
                 "-f",
-                "matroska",
+                container,
                 output_path,
             ]
 
@@ -876,11 +964,14 @@ class RecordWorker:
         os.makedirs(directory, exist_ok=True)
         return directory
 
-    def _build_output_path(self, snapshot, cam=None):
+    def _build_output_path(self, snapshot, cam=None, extension=RECORD_EXTENSION_MKV):
         cam = cam or self.cam
         base_dir = self._build_output_dir()
         base_name = self._build_output_name(snapshot, cam)
-        return os.path.abspath(os.path.join(base_dir, f"{base_name}.mkv"))
+        extension = str(extension or RECORD_EXTENSION_MKV)
+        if not extension.startswith("."):
+            extension = f".{extension}"
+        return os.path.abspath(os.path.join(base_dir, f"{base_name}{extension}"))
 
     def _build_output_name(self, snapshot, cam):
         now = datetime.now()

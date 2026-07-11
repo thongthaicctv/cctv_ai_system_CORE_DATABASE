@@ -93,8 +93,8 @@ plugin-dir=C:/Program Files/MariaDB 11.4/lib/plugin
 => Cấp quyền cho thư mục data mới
 ->Chạy CMD/PowerShell Administrator:
 		- Chạy CMD Administrator: 
-					1. icacls "E:\ATG_DataBackup\data" /grant "NT SERVICE\MariaDB:(OI)(CI)F" /T
-					2. icacls "E:\ATG_DataBackup\data" /grant "Everyone:(OI)(CI)F" /T
+					1. icacls "D:\ATG_DataBackup\data" /grant "NT SERVICE\MariaDB:(OI)(CI)F" /T
+					2. icacls "D:\ATG_DataBackup\data" /grant "Everyone:(OI)(CI)F" /T
 
 2> Cấu hình MariaDB dùng lại data cũ như sau: khi cài mặc định thường ta có C:\Program Files\MariaDB 10.11\data\my.ini hoặc C:\Program Files\MariaDB 11.x\data\my.ini
 	- tìm dòng datadir=... sửa thành "datadir= đường dẫn đến thư mục cũ" ví dụ "datadir=D:/ATG_DataBackup/data"
@@ -106,6 +106,11 @@ plugin-dir=C:/Program Files/MariaDB 11.4/lib/plugin
 
 ->Start lại MariaDB
 	net start MariaDB  (Nếu service tên là MySQL: net start MySQL)
+
+
+=> cấu hình database khởi động phần mềm vào "Cấu hình camera" -> vào "database"
+    1. -> đăng nhập "root" + mật khẩu khi cài đặt MariaDB "ví dụ antn@123" -> cài database -> test kết nối 
+    2. -> đăng nhập database ATG bằng user atg_app mật khẩu atg_password
 
 ====> kiểm tra kết nối khi Start lại MariaDB thành công 
 -> SHOW DATABASES; ( có bảng data atg_order_system )

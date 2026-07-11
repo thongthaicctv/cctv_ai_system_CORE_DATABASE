@@ -161,6 +161,21 @@ def _get_wechat_detector():
     return detector
 
 
+def _get_opencv_detector():
+    detector = getattr(_THREAD_LOCAL, "opencv_detector", _UNINITIALIZED)
+    if detector is _UNINITIALIZED:
+        try:
+            detector = cv2.QRCodeDetector()
+        except Exception:
+            detector = None
+        _THREAD_LOCAL.opencv_detector = detector if detector is not None else False
+
+    if detector is False:
+        return None
+
+    return detector
+
+
 def _resize_keep_ratio(frame, max_width=_MAX_WIDTH):
     if frame is None or max_width is None:
         return frame
@@ -311,6 +326,61 @@ def _decode_with_wechat(frame, fast=False):
     return results
 
 
+def _decode_with_opencv(frame, fast=False):
+    detector = _get_opencv_detector()
+    if detector is None:
+        return []
+
+    image = _resize_keep_ratio(frame)
+    if image is None:
+        return []
+
+    variants = [image]
+    if not fast:
+        try:
+            variants.append(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY))
+        except Exception:
+            pass
+
+    results = []
+    for variant in variants:
+        if fast:
+            try:
+                decoded = detector.detectAndDecode(variant)
+                text = decoded[0] if decoded else ""
+                _append_unique(results, text)
+                if results:
+                    return results
+            except Exception:
+                pass
+            continue
+
+        try:
+            if hasattr(detector, "detectAndDecodeMulti"):
+                decoded = detector.detectAndDecodeMulti(variant)
+                if decoded:
+                    ok = decoded[0]
+                    decoded_info = decoded[1] if len(decoded) > 1 else []
+                    if ok:
+                        for text in decoded_info:
+                            _append_unique(results, text)
+                        if results:
+                            return results
+        except Exception:
+            pass
+
+        try:
+            decoded = detector.detectAndDecode(variant)
+            text = decoded[0] if decoded else ""
+            _append_unique(results, text)
+            if results:
+                return results
+        except Exception:
+            pass
+
+    return results
+
+
 def _qr_formats():
     global _ZXING_QR_FORMATS
 
@@ -378,6 +448,15 @@ def _decode_combined(frame, include_barcodes=False, fast=False):
     if prepared is None:
         return final
 
+    for text in _decode_with_opencv(prepared, fast=fast):
+        if text in seen:
+            continue
+        seen.add(text)
+        final.append(text)
+
+        if fast and not include_barcodes:
+            return final
+
     wechat_results = _decode_with_wechat(prepared, fast=fast)
     for result in wechat_results:
         text = result["text"]
@@ -417,6 +496,10 @@ def _decode_combined(frame, include_barcodes=False, fast=False):
 
 def decode_qr_texts_fast(frame, include_barcodes=False):
     return _decode_combined(frame, include_barcodes=include_barcodes, fast=True)
+
+
+def decode_qr_texts_opencv_fast(frame):
+    return _decode_with_opencv(frame, fast=True)
 
 
 def decode_qr_texts(frame, include_barcodes=False):

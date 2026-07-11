@@ -7,6 +7,69 @@ from utils.url_helper import camera_rtsp_url, camera_source_key
 CONFIG_FILE = "config.json"
 _CONFIG_CACHE = None
 _CONFIG_MTIME = None
+DEFAULT_QR_CONFIG = {
+    "scan_interval": 0.02,
+    "full_scan_every_frames": 3,
+    "slow_scan_every_frames": 15,
+    "max_width": 960,
+    "heavy_scan_max_width": 1280,
+    "drop_stale_frames": 1,
+}
+LEGACY_TURBO_QR_CONFIG = {
+    "scan_interval": 0.003,
+    "full_scan_every_frames": 1,
+    "slow_scan_every_frames": 4,
+    "max_width": 1600,
+}
+LEGACY_FAST_QR_CONFIG = {
+    "scan_interval": 0.01,
+    "full_scan_every_frames": 2,
+    "slow_scan_every_frames": 8,
+    "max_width": 1280,
+}
+LEGACY_SLOW_QR_CONFIG = {
+    "scan_interval": 0.18,
+    "full_scan_every_frames": 10,
+    "slow_scan_every_frames": 15,
+    "max_width": 960,
+}
+
+
+def _same_numeric_value(left, right):
+    try:
+        return float(left) == float(right)
+    except (TypeError, ValueError):
+        return str(left).strip() == str(right).strip()
+
+
+def _matches_qr_config(qr_config, expected):
+    return all(
+        _same_numeric_value(qr_config.get(key), expected_value)
+        for key, expected_value in expected.items()
+    )
+
+
+def _normalize_qr_config(raw_qr_config):
+    qr_config = dict(DEFAULT_QR_CONFIG)
+    if isinstance(raw_qr_config, dict):
+        qr_config.update(
+            {
+                key: raw_qr_config[key]
+                for key in DEFAULT_QR_CONFIG
+                if key in raw_qr_config
+            }
+        )
+
+    if _matches_qr_config(qr_config, LEGACY_TURBO_QR_CONFIG):
+        return dict(DEFAULT_QR_CONFIG)
+
+    if _matches_qr_config(qr_config, LEGACY_FAST_QR_CONFIG):
+        return dict(DEFAULT_QR_CONFIG)
+
+    if _matches_qr_config(qr_config, LEGACY_SLOW_QR_CONFIG):
+        return dict(DEFAULT_QR_CONFIG)
+
+    return qr_config
 
 
 def _default_config():
@@ -18,6 +81,8 @@ def _default_config():
         "record_auto_stop_seconds": 600,
 
         "record_mapping": {},
+
+        "qr": dict(DEFAULT_QR_CONFIG),
 
         "cleanup_enabled": False,
         "keep_index_days": 240,
@@ -46,6 +111,7 @@ def _default_config():
 def _normalize_config(data):
     merged = _default_config()
     merged.update(data or {})
+    merged["qr"] = _normalize_qr_config(merged.get("qr"))
 
     web_index_url = str(merged.get("web_index_url") or "").strip()
     if not web_index_url:

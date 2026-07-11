@@ -137,7 +137,7 @@ def build_index(storage_path: str = None) -> dict:
     videos_by_date = {}
     all_videos = []
 
-    for ext in ("*.mp4", "*.avi", "*.mkv", "*.mov"):
+    for ext in ("*.mp4", "*.avi", "*.mkv", "*.mov", "*.ts"):
         for fpath in sorted(glob.glob(os.path.join(base, "**", ext), recursive=True)):
 
             # bỏ qua thư mục index
@@ -434,7 +434,7 @@ def update_index_incremental(storage_path):
             continue
 
         for name in files:
-            if not name.lower().endswith((".mp4", ".mkv", ".avi", ".mov")):
+            if not name.lower().endswith((".mp4", ".mkv", ".avi", ".mov", ".ts")):
                 continue
 
             full_path = os.path.join(root, name)

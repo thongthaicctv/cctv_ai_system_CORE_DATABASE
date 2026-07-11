@@ -242,6 +242,22 @@ class QREngineTests(unittest.TestCase):
         self.assertTrue(worker._start_order_targets(["8"], "ORDER-2"))
         self.assertEqual(worker.state.started, [("8", "ORDER-2")])
 
+    def test_qr_worker_uses_global_scan_config_with_camera_override(self):
+        worker = QRWorker.__new__(QRWorker)
+        worker.cam = {"qr_scan_interval": 0.05}
+        worker.qr_config = {
+            "scan_interval": 0.02,
+            "full_scan_every_frames": 3,
+            "slow_scan_every_frames": 15,
+            "max_width": 960,
+            "heavy_scan_max_width": 1280,
+            "drop_stale_frames": 1,
+        }
+
+        self.assertEqual(worker._qr_setting("scan_interval", 1.0), 0.05)
+        self.assertEqual(worker._qr_setting("max_width", 1600), 960)
+        self.assertEqual(worker._qr_setting("slow_scan_every_frames", 4), 15)
+
 
 if __name__ == "__main__":
     unittest.main()

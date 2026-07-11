@@ -1,6 +1,6 @@
 import unittest
 
-from core.config_manager import find_duplicate_camera_sources
+from core.config_manager import _normalize_config, find_duplicate_camera_sources
 
 
 class ConfigManagerTests(unittest.TestCase):
@@ -35,6 +35,78 @@ class ConfigManagerTests(unittest.TestCase):
 
         self.assertEqual(len(groups), 1)
         self.assertEqual([item["id"] for item in groups[0]], ["1", "2"])
+
+    def test_legacy_slow_qr_config_is_migrated_to_stable_defaults(self):
+        data = {
+            "qr": {
+                "scan_interval": 0.18,
+                "full_scan_every_frames": 10,
+                "slow_scan_every_frames": 15,
+                "max_width": 960,
+            }
+        }
+
+        normalized = _normalize_config(data)
+
+        self.assertEqual(
+            normalized["qr"],
+            {
+                "scan_interval": 0.02,
+                "full_scan_every_frames": 3,
+                "slow_scan_every_frames": 15,
+                "max_width": 960,
+                "heavy_scan_max_width": 1280,
+                "drop_stale_frames": 1,
+            },
+        )
+
+    def test_legacy_fast_qr_config_is_migrated_to_stable_defaults(self):
+        data = {
+            "qr": {
+                "scan_interval": 0.01,
+                "full_scan_every_frames": 2,
+                "slow_scan_every_frames": 8,
+                "max_width": 1280,
+            }
+        }
+
+        normalized = _normalize_config(data)
+
+        self.assertEqual(
+            normalized["qr"],
+            {
+                "scan_interval": 0.02,
+                "full_scan_every_frames": 3,
+                "slow_scan_every_frames": 15,
+                "max_width": 960,
+                "heavy_scan_max_width": 1280,
+                "drop_stale_frames": 1,
+            },
+        )
+
+    def test_legacy_turbo_qr_config_is_migrated_to_stable_defaults(self):
+        data = {
+            "qr": {
+                "scan_interval": 0.003,
+                "full_scan_every_frames": 1,
+                "slow_scan_every_frames": 4,
+                "max_width": 1600,
+            }
+        }
+
+        normalized = _normalize_config(data)
+
+        self.assertEqual(
+            normalized["qr"],
+            {
+                "scan_interval": 0.02,
+                "full_scan_every_frames": 3,
+                "slow_scan_every_frames": 15,
+                "max_width": 960,
+                "heavy_scan_max_width": 1280,
+                "drop_stale_frames": 1,
+            },
+        )
 
 
 if __name__ == "__main__":
