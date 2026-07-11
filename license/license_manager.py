@@ -113,7 +113,7 @@ class LicenseManager:
             return False, sync_msg
         elif sync_msg.startswith("LICENSE_TOKEN_INVALID"):
             return False, sync_msg
-        elif sync_msg == "DEVICE_ID_NOT_FOUND" and not had_valid_cache:
+        elif sync_msg == "DEVICE_ID_NOT_FOUND":
             return False, (
                 "DEVICE_ID chua duoc kich hoat tren he thong ATG.\n"
                 "Vui long gui Device ID cho quan tri vien 0904143113."
