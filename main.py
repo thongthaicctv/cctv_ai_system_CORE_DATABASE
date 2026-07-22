@@ -33,6 +33,39 @@ from system_logger import log
 # =========================
 
 _lock_file = None
+_native_icon_handles = []
+
+
+def apply_native_taskbar_icon(window):
+    """Force Windows to use the bundled icon for the title bar and taskbar."""
+    if sys.platform != "win32":
+        return
+
+    icon_file = resource_path("icon_taskbar.ico")
+    if not os.path.isfile(icon_file):
+        return
+
+    user32 = ctypes.windll.user32
+    image_icon = 1
+    lr_loadfromfile = 0x0010
+    wm_seticon = 0x0080
+    icon_small = 0
+    icon_big = 1
+
+    hwnd = int(window.winId())
+    small_icon = user32.LoadImageW(
+        None, icon_file, image_icon, 16, 16, lr_loadfromfile
+    )
+    big_icon = user32.LoadImageW(
+        None, icon_file, image_icon, 32, 32, lr_loadfromfile
+    )
+
+    if small_icon:
+        user32.SendMessageW(hwnd, wm_seticon, icon_small, small_icon)
+        _native_icon_handles.append(small_icon)
+    if big_icon:
+        user32.SendMessageW(hwnd, wm_seticon, icon_big, big_icon)
+        _native_icon_handles.append(big_icon)
 
 def ensure_single_instance():
     global _lock_file
@@ -67,13 +100,6 @@ def main():
 
     prepare_gpu_runtime()
 
-    try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "ATGSolution.ProVideoAISystem.1.0"
-        )
-    except Exception:
-        pass
-
     from ui.main_window import MainWindow
 
     accel_info = configure_opencv_acceleration()
@@ -81,7 +107,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.gpu_runtime_info = accel_info
-    app_icon = QIcon(resource_path("icon.ico"))
+    app_icon = QIcon(resource_path("icon_taskbar.ico"))
     if not app_icon.isNull():
         app.setWindowIcon(app_icon)
 
@@ -143,6 +169,7 @@ def main():
     app.record_engine = window.record
 
     window.show()
+    apply_native_taskbar_icon(window)
 
     sys.exit(app.exec())
 

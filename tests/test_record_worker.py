@@ -34,6 +34,29 @@ class DummyState:
 
 
 class RecordWorkerTests(unittest.TestCase):
+    def test_record_formats_prefers_mpegts_for_fast_hevc_start(self):
+        worker = RecordWorker(
+            {"id": "1", "name": "CAM-1"},
+            DummyState(),
+            "G:/recordings",
+            300,
+        )
+
+        self.assertEqual(worker._record_formats(), [("mpegts", ".ts")])
+
+    def test_record_formats_can_still_prefer_mkv_with_ts_fallback(self):
+        worker = RecordWorker(
+            {"id": "1", "name": "CAM-1", "record_container": "mkv"},
+            DummyState(),
+            "G:/recordings",
+            300,
+        )
+
+        self.assertEqual(
+            worker._record_formats(),
+            [("matroska", ".mkv"), ("mpegts", ".ts")],
+        )
+
     def test_ffmpeg_copy_command_supports_multiple_outputs(self):
         worker = RecordWorker(
             {"id": "1", "name": "CAM-1"},
@@ -67,9 +90,9 @@ class RecordWorkerTests(unittest.TestCase):
                 "-use_wallclock_as_timestamps",
                 "1",
                 "-analyzeduration",
-                "20000000",
+                "2000000",
                 "-probesize",
-                "20000000",
+                "4000000",
                 "-i",
                 "rtsp://camera/main",
                 "-map",

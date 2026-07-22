@@ -69,10 +69,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Pro Video AI System  - ATG Solution Version v4.0.1 - visitor: www.annguyen.pro - https://camerathainguyen.com - ĐT: 0208 656 5555 / zalo: 090 414 3113")
+        self.setWindowTitle("T&T VISION AI v4.0.1 | Intelligent Video Management Platform - visitor: www.annguyen.pro - www.bencom.com.vn- ĐT: 0208 656 5555 / zalo: 090 414 3113")
         self.resize(1366, 768)
         self.setMinimumSize(1280, 700)
-        app_icon = QIcon(resource_path("icon.ico"))
+        app_icon = QIcon(resource_path("icon_taskbar.ico"))
         self.setWindowIcon(app_icon)
 
         self.setStyleSheet("""
@@ -142,8 +142,8 @@ class MainWindow(QMainWindow):
         side.setContentsMargins(12, 12, 12, 12)
         side.setSpacing(8)
 
-        logo = QLabel("Pro Video AI System  - ATG Solution Version v4.0.1 - visitor: www.annguyen.pro - https://camerathainguyen.com - ĐT: 0208 656 5555 / zalo: 090 414 3113")
-        logo.setFont(QFont("Segoe UI", 15, QFont.Bold))
+        logo = QLabel("T&T VISION AI")
+        logo.setFont(QFont("Segoe UI", 20, QFont.Bold))
 
         side.addWidget(logo)
         side.addSpacing(10)
@@ -208,14 +208,14 @@ class MainWindow(QMainWindow):
 
         logo.setPixmap(
             pix.scaled(
-                200,
-                200,
+                150,
+                150,
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation
             )
         )
 
-        company = QLabel("www.annguyen.pro ")
+        company = QLabel("Intelligent Video Recording \n& Management Platform ")
         company.setAlignment(Qt.AlignCenter)
         company.setStyleSheet("""
         font-size:12px;

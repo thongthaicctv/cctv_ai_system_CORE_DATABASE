@@ -242,6 +242,37 @@ class QREngineTests(unittest.TestCase):
         self.assertTrue(worker._start_order_targets(["8"], "ORDER-2"))
         self.assertEqual(worker.state.started, [("8", "ORDER-2")])
 
+    def test_db_packing_session_is_stale_after_restart(self):
+        worker = QRWorker.__new__(QRWorker)
+        worker.packing_record_targets = {}
+        self.assertFalse(
+            worker._is_runtime_packing_session(
+                "s01",
+                {"id": 42, "master_order_code": "ORDER-1"},
+            )
+        )
+
+    def test_packing_session_opened_in_runtime_is_active(self):
+        worker = QRWorker.__new__(QRWorker)
+        worker.packing_record_targets = {"packing:42:s01": ["1"]}
+        self.assertTrue(
+            worker._is_runtime_packing_session(
+                "s01",
+                {"id": 42, "master_order_code": "ORDER-1"},
+            )
+        )
+
+    def test_same_visible_qr_is_not_accepted_every_five_seconds(self):
+        worker = QRWorker.__new__(QRWorker)
+        worker.cam = {"qr_duplicate_seconds": 5}
+        worker.last_seen = {}
+
+        with patch("services.qr_worker.time.time", side_effect=[1, 5, 9, 15]):
+            self.assertTrue(worker._should_accept("QR-1"))
+            self.assertFalse(worker._should_accept("QR-1"))
+            self.assertFalse(worker._should_accept("QR-1"))
+            self.assertTrue(worker._should_accept("QR-1"))
+
     def test_qr_worker_uses_global_scan_config_with_camera_override(self):
         worker = QRWorker.__new__(QRWorker)
         worker.cam = {"qr_scan_interval": 0.05}

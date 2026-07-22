@@ -18,12 +18,12 @@ DEFAULT_RECORD_AUTO_STOP_SECONDS = 300
 WAIT_RECORD_UPDATE_TIMEOUT_SECONDS = 1.0
 RETRY_DELAY_SECONDS = 1.0
 RECORD_ERROR_SOUND_INTERVAL_SECONDS = 10.0
-FFMPEG_STARTUP_CHECK_SECONDS = 2.0
+FFMPEG_STARTUP_CHECK_SECONDS = 0.5
 FFMPEG_POLL_DELAY_SECONDS = 0.2
 DEFAULT_RECORD_STARTUP_READY_TIMEOUT_SECONDS = 10.0
 DEFAULT_RECORD_STARTUP_MIN_FILE_BYTES = 512
 DEFAULT_RECORD_STARTUP_PROBE_TIMEOUT_SECONDS = 12.0
-SHARED_RECORD_JOIN_WINDOW_SECONDS = 0.4
+SHARED_RECORD_JOIN_WINDOW_SECONDS = 0.1
 SHARED_RECORD_WAIT_SECONDS = 15.0
 FFMPEG_STDERR_TAIL_CHARS = 4000
 RECORD_CONTAINER_MKV = "matroska"
@@ -465,10 +465,17 @@ class RecordWorker:
         return ""
 
     def _record_formats(self):
-        formats = [(RECORD_CONTAINER_MKV, RECORD_EXTENSION_MKV)]
-        if bool(self.cam.get("record_mpegts_fallback", True)):
-            formats.append((RECORD_CONTAINER_MPEGTS, RECORD_EXTENSION_MPEGTS))
-        return formats
+        # MPEG-TS can start writing an HEVC stream before the camera repeats
+        # VPS/SPS/PPS. MKV needs those headers up front and caused an extra
+        # failed startup cycle (or no recording) on the tested cameras.
+        preferred = str(self.cam.get("record_container", "mpegts")).strip().lower()
+        if preferred in {"mkv", "matroska"}:
+            formats = [(RECORD_CONTAINER_MKV, RECORD_EXTENSION_MKV)]
+            if bool(self.cam.get("record_mpegts_fallback", True)):
+                formats.append((RECORD_CONTAINER_MPEGTS, RECORD_EXTENSION_MPEGTS))
+            return formats
+
+        return [(RECORD_CONTAINER_MPEGTS, RECORD_EXTENSION_MPEGTS)]
 
     def _build_output_paths(self, snapshot, cameras_by_id, extension):
         paths = {}
@@ -584,9 +591,9 @@ class RecordWorker:
             "-use_wallclock_as_timestamps",
             "1",
             "-analyzeduration",
-            str(int(self.cam.get("record_analyzeduration_us", 20000000))),
+            str(int(self.cam.get("record_analyzeduration_us", 2000000))),
             "-probesize",
-            str(int(self.cam.get("record_probesize_bytes", 20000000))),
+            str(int(self.cam.get("record_probesize_bytes", 4000000))),
             "-i",
             rtsp,
         ]

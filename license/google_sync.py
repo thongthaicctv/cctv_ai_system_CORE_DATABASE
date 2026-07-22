@@ -9,7 +9,7 @@ from .crypto import verify_signed_token
 
 
 GOOGLE_SHEET_CSV_URL = (
-    "https://docs.google.com/spreadsheets/d/1PgrEJ4yJPE-hXBCa_snroalCTE-ySJEhxbiQ1CHe6c8/export?format=csv&gid=0"
+    "https://docs.google.com/spreadsheets/d/11tfGgzuoMm9z1D9_8fSF_cjPzUByE5VP6bj9hRJOkag/export?format=csv&gid=0"
 )
 
 

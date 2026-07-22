@@ -448,6 +448,18 @@ def _decode_combined(frame, include_barcodes=False, fast=False):
     if prepared is None:
         return final
 
+    # ZXing-C++ is substantially faster than the OpenCV/WeChat detector chain
+    # for clean QR frames. Try the original image first on the real-time path
+    # so a visible code does not wait behind the heavier detectors.
+    if fast:
+        for text in _decode_with_zxing_single_image(prepared, include_barcodes):
+            if text in seen:
+                continue
+            seen.add(text)
+            final.append(text)
+        if final and not include_barcodes:
+            return final
+
     for text in _decode_with_opencv(prepared, fast=fast):
         if text in seen:
             continue

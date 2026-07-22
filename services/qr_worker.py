@@ -25,14 +25,14 @@ from services.qr_decoder import (
 from utils.url_helper import camera_rtsp_url, open_rtsp_capture
 
 
-DEFAULT_SCAN_INTERVAL = 0.02
+DEFAULT_SCAN_INTERVAL = 0.01
 DEFAULT_DUPLICATE_SECONDS = 5
 RECONNECT_DELAY_SECONDS = 2
 MAX_RECONNECT_DELAY_SECONDS = 30
 RTSP_OPEN_TIMEOUT_MSEC = 5000
 RTSP_READ_TIMEOUT_MSEC = 5000
-FULL_SCAN_EVERY_FRAMES = 3
-SLOW_SCAN_EVERY_FRAMES = 15
+FULL_SCAN_EVERY_FRAMES = 2
+SLOW_SCAN_EVERY_FRAMES = 5
 SCAN_MAX_WIDTH = 960
 HEAVY_SCAN_MAX_WIDTH = 1280
 DROP_STALE_FRAMES = 1
@@ -246,10 +246,12 @@ class QRWorker:
         now = time.time()
         duplicate_seconds = float(self.cam.get("qr_duplicate_seconds", DEFAULT_DUPLICATE_SECONDS))
         last_time = self.last_seen.get(text)
+        # Refresh on every detection so a QR held in view stays suppressed
+        # until it has actually disappeared for duplicate_seconds.
+        self.last_seen[text] = now
         if last_time and now - last_time < duplicate_seconds:
             return False
 
-        self.last_seen[text] = now
         return True
 
     def _parse_manual_cmd(self, text):
@@ -368,6 +370,16 @@ class QRWorker:
                 f"{' in ' + context if context else ''}, continue record flow: {exc}"
             )
             return None
+
+    def _is_runtime_packing_session(self, scanner_id, active_packing):
+        """Only sessions opened during this app run may consume item scans."""
+        if not isinstance(active_packing, dict):
+            return False
+
+        session_id = active_packing.get("id")
+        if session_id is None:
+            return False
+        return f"packing:{session_id}:{scanner_id}" in self.packing_record_targets
 
     def _wait_next_handover_order(self, scanner_id):
         self.packing_action_state[scanner_id] = {
@@ -508,11 +520,16 @@ class QRWorker:
             context="raw_scan",
         )
         if active_packing:
-            self.packing_service.add_packing_item(
-                scanner_id=scanner_id,
-                item_code=body,
+            if self._is_runtime_packing_session(scanner_id, active_packing):
+                self.packing_service.add_packing_item(
+                    scanner_id=scanner_id,
+                    item_code=body,
+                )
+                return True
+            self._packing_log(
+                f"[PACKING STALE SESSION IGNORED] scanner={scanner_id}, "
+                f"session_id={active_packing.get('id')}, direct_order={body}"
             )
-            return True
 
         return False
 
@@ -1378,11 +1395,16 @@ class QRWorker:
             )
 
             if active_packing:
-                self.packing_service.add_packing_item(
-                    scanner_id=scanner_id,
-                    item_code=body
+                if self._is_runtime_packing_session(scanner_id, active_packing):
+                    self.packing_service.add_packing_item(
+                        scanner_id=scanner_id,
+                        item_code=body
+                    )
+                    return
+                self._packing_log(
+                    f"[PACKING STALE SESSION IGNORED] scanner={scanner_id}, "
+                    f"session_id={active_packing.get('id')}, direct_order={body}"
                 )
-                return
 
             # 6. Không thuộc nghiệp vụ đóng/giao thì giữ logic order cũ
             target_ids = self._target_camera_ids(scan_cam_id)

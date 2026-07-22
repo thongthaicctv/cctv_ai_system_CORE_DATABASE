@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 """
-PyInstaller onefile spec for cctv_ai_system_CORE_DATABASE.
+PyInstaller onefile spec for T&T VISION AI.
 
 Update for commit 8b24409:
 - Do NOT bundle old SQLite runtime databases such as db/packing.db or data/report.db.
@@ -120,6 +120,7 @@ add_data("requirements_mysql.txt", ".")
 
 # Branding/icon files.
 add_data("icon.ico", ".")
+add_data("icon_taskbar.ico", ".")
 add_data("logo.png", ".")
 add_data("logo_app.png", ".")
 add_data("banner.png", ".")
@@ -138,7 +139,9 @@ for source_dir in (
 # - data/report.db
 # They must be replaced by MySQL/MariaDB runtime data.
 
-icon_path = "icon.ico" if exists("icon.ico") else None
+icon_path = "icon_taskbar.ico" if exists("icon_taskbar.ico") else (
+    "icon.ico" if exists("icon.ico") else None
+)
 
 
 a = Analysis(
@@ -162,7 +165,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="ATG_AI_SYSTEM_RECORD",
+    name="T&T VISION AI",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

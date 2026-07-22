@@ -36,6 +36,14 @@
             "12"
         ]
     },
+    "qr": {
+        "scan_interval": 0.02,
+        "full_scan_every_frames": 3,
+        "slow_scan_every_frames": 15,
+        "max_width": 960,
+        "heavy_scan_max_width": 1280,
+        "drop_stale_frames": 1
+    },
     "cleanup_enabled": true,
     "keep_index_days": 3,
     "cameras": [
@@ -43,8 +51,8 @@
             "id": "1",
             "name": "DEBUG-1",
             "ip": "192.168.110.185",
-            "rtsp_main": "RTSP://admin:Antn2016@192.168.110.185:554/live/0/main",
-            "rtsp_sub": "RTSP://admin:Antn2016@192.168.110.185:554/live/0/sub",
+            "rtsp_main": "rtsp://admin:Antn2016@192.168.110.185:554/live/0/main",
+            "rtsp_sub": "rtsp://admin:Antn2016@192.168.110.185:554/live/0/sub",
             "area": "DEBUG",
             "enabled": true
         },
@@ -132,9 +140,9 @@
         {
             "id": "12",
             "name": "uniarch",
-            "ip": "192.168.110.186",
-            "rtsp_main": "rtsp://admin:123456@192.168.110.186:554/media/video1",
-            "rtsp_sub": "rtsp://admin:123456@192.168.110.186:554/media/video2",
+            "ip": "192.168.110.7",
+            "rtsp_main": "rtsp://admin:Antn2016,@192.168.110.75:554/media/video1",
+            "rtsp_sub": "rtsp://admin:Antn2016,@192.168.110.75:554/media/video2",
             "area": "Debug",
             "enabled": true
         }

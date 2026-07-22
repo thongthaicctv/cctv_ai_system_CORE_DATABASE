@@ -51,9 +51,9 @@ class ConfigManagerTests(unittest.TestCase):
         self.assertEqual(
             normalized["qr"],
             {
-                "scan_interval": 0.02,
-                "full_scan_every_frames": 3,
-                "slow_scan_every_frames": 15,
+                "scan_interval": 0.01,
+                "full_scan_every_frames": 2,
+                "slow_scan_every_frames": 5,
                 "max_width": 960,
                 "heavy_scan_max_width": 1280,
                 "drop_stale_frames": 1,
@@ -75,9 +75,9 @@ class ConfigManagerTests(unittest.TestCase):
         self.assertEqual(
             normalized["qr"],
             {
-                "scan_interval": 0.02,
-                "full_scan_every_frames": 3,
-                "slow_scan_every_frames": 15,
+                "scan_interval": 0.01,
+                "full_scan_every_frames": 2,
+                "slow_scan_every_frames": 5,
                 "max_width": 960,
                 "heavy_scan_max_width": 1280,
                 "drop_stale_frames": 1,
@@ -99,9 +99,9 @@ class ConfigManagerTests(unittest.TestCase):
         self.assertEqual(
             normalized["qr"],
             {
-                "scan_interval": 0.02,
-                "full_scan_every_frames": 3,
-                "slow_scan_every_frames": 15,
+                "scan_interval": 0.01,
+                "full_scan_every_frames": 2,
+                "slow_scan_every_frames": 5,
                 "max_width": 960,
                 "heavy_scan_max_width": 1280,
                 "drop_stale_frames": 1,
